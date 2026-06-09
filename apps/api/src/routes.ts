@@ -23,5 +23,35 @@ export function buildApiRoutes(issuer: string): Route[] {
         }),
       }),
     },
+    {
+      method: 'GET',
+      path: '/oauth2/authorize',
+      handler: () => ({ statusCode: 501, body: { error: 'authorize_not_implemented' } }),
+    },
+    {
+      method: 'POST',
+      path: '/oauth2/token',
+      handler: () => ({ statusCode: 501, body: { error: 'token_not_implemented' } }),
+    },
+    {
+      method: 'GET',
+      path: '/oauth2/jwks',
+      handler: () => ({ statusCode: 200, body: { keys: [] } }),
+    },
+    {
+      method: 'GET',
+      path: '/oauth2/userinfo',
+      handler: () => ({ statusCode: 501, body: { error: 'userinfo_not_implemented' } }),
+    },
+    {
+      method: 'GET',
+      path: '/oauth2/logout',
+      handler: () => ({ statusCode: 501, body: { error: 'logout_not_implemented' } }),
+    },
+    {
+      method: 'POST',
+      path: '/oauth2/logout',
+      handler: () => ({ statusCode: 501, body: { error: 'logout_not_implemented' } }),
+    },
   ];
 }
