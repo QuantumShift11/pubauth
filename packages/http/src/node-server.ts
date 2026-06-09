@@ -65,7 +65,8 @@ async function readBody(incoming: IncomingMessage): Promise<unknown> {
     return undefined;
   }
 
-  const contentType = incoming.headers['content-type'] ?? '';
+  const contentTypeHeader = incoming.headers['content-type'];
+  const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader.join(',') : contentTypeHeader ?? '';
 
   if (contentType.includes('application/json')) {
     return JSON.parse(raw);
