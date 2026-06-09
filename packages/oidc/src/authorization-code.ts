@@ -12,6 +12,8 @@ export interface AuthorizationCode {
 
 export interface AuthorizationCodeStore {
   save(code: AuthorizationCode): Promise<void>;
+  findUsable(codeHash: string, now: Date): Promise<AuthorizationCode | null>;
+  markUsed(codeHash: string, now: Date): Promise<void>;
   consume(codeHash: string, now: Date): Promise<AuthorizationCode | null>;
 }
 
