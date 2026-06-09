@@ -106,8 +106,8 @@ async function handleToken(request: HttpRequest) {
 
   try {
     const response = await tokenIssuer.issueToken({
-      grantType: readBodyValue(body, 'grant_type') === 'refresh_token' ? 'refresh_token' : 'authorization_code',
-      clientId: readBodyValue(body, 'client_id'),
+      grantType: requireBody(body, 'grant_type') === 'refresh_token' ? 'refresh_token' : 'authorization_code',
+      clientId: requireBody(body, 'client_id'),
       redirectUri: readBodyValue(body, 'redirect_uri'),
       code: readBodyValue(body, 'code'),
       refreshToken: readBodyValue(body, 'refresh_token'),
@@ -122,6 +122,14 @@ async function handleToken(request: HttpRequest) {
 
 function requireQuery(request: HttpRequest, name: string): string {
   const value = request.query[name];
+  if (!value) {
+    throw new Error(`missing_${name}`);
+  }
+  return value;
+}
+
+function requireBody(body: Record<string, string>, name: string): string {
+  const value = readBodyValue(body, name);
   if (!value) {
     throw new Error(`missing_${name}`);
   }
