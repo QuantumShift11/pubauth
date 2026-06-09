@@ -8,14 +8,27 @@ export class MemoryAuthorizationCodeStore implements AuthorizationCodeStore {
     this.codes.set(code.codeHash, code);
   }
 
-  async consume(codeHash: string, now = new Date()): Promise<AuthorizationCode | null> {
+  async findUsable(codeHash: string, now = new Date()): Promise<AuthorizationCode | null> {
     const code = this.codes.get(codeHash);
     if (!code || !isAuthorizationCodeUsable(code, now)) {
       return null;
     }
+    return code;
+  }
 
-    const consumed = { ...code, usedAt: now.toISOString() };
-    this.codes.set(codeHash, consumed);
-    return consumed;
+  async markUsed(codeHash: string, now = new Date()): Promise<void> {
+    const code = this.codes.get(codeHash);
+    if (code) {
+      this.codes.set(codeHash, { ...code, usedAt: now.toISOString() });
+    }
+  }
+
+  async consume(codeHash: string, now = new Date()): Promise<AuthorizationCode | null> {
+    const code = await this.findUsable(codeHash, now);
+    if (!code) {
+      return null;
+    }
+    await this.markUsed(codeHash, now);
+    return code;
   }
 }
