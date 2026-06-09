@@ -1,0 +1,28 @@
+services:
+  api:
+    build: .
+    command: node dist/apps/api/src/main.js
+    environment:
+      PUBAUTH_ENV: local
+      PUBAUTH_ISSUER: http://localhost:8080
+      PORT: 8080
+    ports:
+      - "8080:8080"
+
+  gateway:
+    build: .
+    command: node dist/apps/gateway/src/main.js
+    environment:
+      PUBAUTH_ENV: local
+      PUBAUTH_ISSUER: http://localhost:8080
+      PORT: 8081
+    ports:
+      - "8081:8081"
+
+  worker:
+    build: .
+    command: node dist/apps/worker/src/main.js
+    environment:
+      PUBAUTH_ENV: local
+      PUBAUTH_ISSUER: http://localhost:8080
+      PORT: 8082
