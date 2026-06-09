@@ -9,7 +9,7 @@ export interface NodeServerOptions {
 
 export function startNodeServer(options: NodeServerOptions) {
   const server = createServer(async (incoming, outgoing) => {
-    const request = toHttpRequest(incoming);
+    const request = await toHttpRequest(incoming);
     const route = findRoute(options.routes, request.method, request.path);
 
     if (!route) {
@@ -29,15 +29,45 @@ export function startNodeServer(options: NodeServerOptions) {
   return server;
 }
 
-function toHttpRequest(incoming: IncomingMessage): HttpRequest {
+async function toHttpRequest(incoming: IncomingMessage): Promise<HttpRequest> {
   const url = new URL(incoming.url ?? '/', 'http://localhost');
   return {
     method: (incoming.method ?? 'GET').toUpperCase() as HttpMethod,
     path: url.pathname,
+    query: Object.fromEntries(url.searchParams.entries()),
     headers: Object.fromEntries(
       Object.entries(incoming.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value]),
     ),
+    body: await readBody(incoming),
   };
+}
+
+async function readBody(incoming: IncomingMessage): Promise<unknown> {
+  if (incoming.method === 'GET' || incoming.method === 'HEAD') {
+    return undefined;
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of incoming) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const raw = Buffer.concat(chunks).toString('utf8');
+  if (!raw) {
+    return undefined;
+  }
+
+  const contentType = incoming.headers['content-type'] ?? '';
+
+  if (contentType.includes('application/json')) {
+    return JSON.parse(raw);
+  }
+
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    return Object.fromEntries(new URLSearchParams(raw).entries());
+  }
+
+  return raw;
 }
 
 function writeResponse(outgoing: ServerResponse, response: HttpResponse): void {
