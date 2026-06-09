@@ -1,1 +1,17 @@
-{}
+{
+  "name": "pubauth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone OIDC provider, no-code authentication gateway, and gateway-level RBAC platform.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start:api": "node dist/apps/api/src/main.js",
+    "start:gateway": "node dist/apps/gateway/src/main.js",
+    "start:worker": "node dist/apps/worker/src/main.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
