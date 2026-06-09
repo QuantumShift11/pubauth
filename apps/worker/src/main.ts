@@ -1,5 +1,16 @@
+import { loadConfig } from '../../../packages/config/src/index.js';
+import { createLogger } from '../../../packages/logger/src/index.js';
+import { JobRegistry } from '../../../packages/jobs/src/index.js';
+
 export async function startWorkerService(): Promise<void> {
-  console.log('PubAuth Worker service starting');
+  const config = loadConfig('worker');
+  const logger = createLogger('worker');
+  const jobs = new JobRegistry();
+
+  logger.info('worker_service_started', {
+    environment: config.environment,
+    registeredJobs: jobs.list(),
+  });
 }
 
 startWorkerService().catch((error) => {
