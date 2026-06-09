@@ -9,7 +9,15 @@ export interface NodeServerOptions {
 
 export function startNodeServer(options: NodeServerOptions) {
   const server = createServer(async (incoming, outgoing) => {
-    const request = await toHttpRequest(incoming);
+    let request: HttpRequest;
+
+    try {
+      request = await toHttpRequest(incoming);
+    } catch {
+      writeResponse(outgoing, { statusCode: 400, body: { error: 'invalid_request_body' } });
+      return;
+    }
+
     const route = findRoute(options.routes, request.method, request.path);
 
     if (!route) {
