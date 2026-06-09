@@ -15,7 +15,8 @@ export class DevTokenIssuer implements TokenIssuer {
       throw new Error('invalid_request');
     }
 
-    const code = await this.codes.consume(sha256Hex(request.code));
+    const codeHash = sha256Hex(request.code);
+    const code = await this.codes.findUsable(codeHash, new Date());
     if (!code) {
       throw new Error('invalid_grant');
     }
@@ -31,6 +32,8 @@ export class DevTokenIssuer implements TokenIssuer {
     if (!verifyPkceS256(request.codeVerifier, code.codeChallenge)) {
       throw new Error('invalid_grant');
     }
+
+    await this.codes.markUsed(codeHash, new Date());
 
     return {
       accessToken: randomToken(32),
