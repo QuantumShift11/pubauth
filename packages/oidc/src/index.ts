@@ -4,6 +4,8 @@ export * from './client.js';
 export * from './discovery.js';
 export * from './jwks.js';
 export * from './logout.js';
+export * from './memory-authorization-code-store.js';
+export * from './memory-client-store.js';
 export * from './pkce.js';
 export * from './token.js';
 export * from './userinfo.js';
