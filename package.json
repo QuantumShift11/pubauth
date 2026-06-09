@@ -12,6 +12,7 @@
     "start:worker": "node dist/apps/worker/src/main.js"
   },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "typescript": "^5.7.2"
   }
 }
