@@ -8,6 +8,11 @@ export interface AuthorizationRequest {
   codeChallengeMethod: 'S256';
 }
 
+export interface AuthenticatedAuthorizationRequest extends AuthorizationRequest {
+  subjectId: string;
+  workspaceId: string;
+}
+
 export interface AuthorizationResponse {
   redirectUri: string;
   code: string;
@@ -15,7 +20,7 @@ export interface AuthorizationResponse {
 }
 
 export interface AuthorizationService {
-  start(request: AuthorizationRequest): Promise<AuthorizationResponse>;
+  start(request: AuthenticatedAuthorizationRequest): Promise<AuthorizationResponse>;
 }
 
 export function parseScopes(scope: string): string[] {
