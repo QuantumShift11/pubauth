@@ -2,6 +2,7 @@ export interface AuthorizationCode {
   codeHash: string;
   clientId: string;
   subjectId: string;
+  workspaceId: string;
   redirectUri: string;
   scopes: string[];
   codeChallenge: string;

@@ -9,6 +9,7 @@ import {
   FileAccessTokenStore,
   FileAuthorizationCodeStore,
   FileOidcClientRepository,
+  resolveTokenClaims,
 } from '../../../packages/oidc/src/index.js';
 import { FileAdminService } from '../../../packages/admin/src/index.js';
 import { JsonFileStore, createDefaultPubAuthState, type PubAuthState } from '../../../packages/storage/src/index.js';
@@ -33,7 +34,12 @@ export async function buildApiContext(issuer: string, dataDir = '.pubauth-data')
   return {
     stateStore,
     jwtSigner,
-    tokenIssuer: new DevTokenIssuer(authorizationCodeStore, accessTokenStore, jwtSigner),
+    tokenIssuer: new DevTokenIssuer(
+      authorizationCodeStore,
+      accessTokenStore,
+      jwtSigner,
+      (request) => resolveTokenClaims(stateStore, request),
+    ),
     userInfoService: new DevUserInfoService(accessTokenStore, jwtSigner),
     authorizationService: new DefaultAuthorizationService(clientStore, authorizationCodeStore),
     adminService,
@@ -134,6 +140,7 @@ export async function buildApiRoutes(issuer: string, dataDirOrContext?: string |
         handleAdminResponse(
           await adminService.createRoutePolicy({
             productId: requireBodyString(readBody(request), 'productId'),
+            upstreamUrl: requireBodyString(readBody(request), 'upstreamUrl'),
             pathPattern: requireBodyString(readBody(request), 'pathPattern'),
             methods: requireBodyArray(readBody(request), 'methods'),
             requiredRoles: requireBodyArray(readBody(request), 'requiredRoles'),

@@ -31,9 +31,12 @@ services:
     environment:
       PUBAUTH_ENV: local
       PUBAUTH_ISSUER: http://localhost:8080
+      PUBAUTH_DATA_DIR: /app/.pubauth-data
       PORT: 8081
     ports:
       - "8081:8081"
+    volumes:
+      - pubauth-data:/app/.pubauth-data
 
   worker:
     build: .

@@ -24,7 +24,7 @@ test('web bootstrap route composes API health, discovery, and jwks', async () =>
         products: [{ id: 'product-1', name: 'Atlas', slug: 'atlas', environment: 'local', status: 'active' }],
         workspaces: [{ id: 'workspace-1', name: 'Core', slug: 'core', state: 'active' }],
         clients: [{ id: 'client-1', clientId: 'dev-client', productId: 'product-1', clientType: 'public', isActive: true }],
-        routePolicies: [{ id: 'policy-1', productId: 'product-1', pathPattern: '/dashboard/**', methods: ['GET'], requiredRoles: ['admin'] }],
+        routePolicies: [{ id: 'policy-1', productId: 'product-1', upstreamUrl: 'http://upstream.local', pathPattern: '/dashboard/**', methods: ['GET'], requiredRoles: ['admin'] }],
         roles: [{ id: 'role-1', name: 'admin' }],
         assignments: [{ id: 'assignment-1', userId: 'user-1', role: 'admin' }],
         counts: {

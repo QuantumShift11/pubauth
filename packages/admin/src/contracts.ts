@@ -24,6 +24,7 @@ export interface ClientAdminCommand {
 
 export interface RoutePolicyAdminCommand {
   productId: string;
+  upstreamUrl: string;
   pathPattern: string;
   methods: string[];
   requiredRoles: string[];

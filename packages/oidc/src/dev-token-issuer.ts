@@ -9,6 +9,7 @@ export class DevTokenIssuer implements TokenIssuer {
     private readonly codes: AuthorizationCodeStore,
     private readonly accessTokens?: AccessTokenStore,
     private readonly jwtSigner?: JwtSigner,
+    private readonly claimResolver?: (request: { subjectId: string; workspaceId: string }) => Promise<Record<string, unknown>>,
   ) {}
 
   async issueToken(request: TokenRequest): Promise<TokenResponse> {
@@ -50,6 +51,8 @@ export class DevTokenIssuer implements TokenIssuer {
             token_use: 'access_token',
             scope: code.scopes.join(' '),
             client_id: code.clientId,
+            workspace_id: code.workspaceId,
+            ...((await this.claimResolver?.({ subjectId: code.subjectId, workspaceId: code.workspaceId })) ?? {}),
           },
         })
       : randomToken(32);
@@ -63,6 +66,8 @@ export class DevTokenIssuer implements TokenIssuer {
             token_use: 'id_token',
             scope: code.scopes.join(' '),
             client_id: code.clientId,
+            workspace_id: code.workspaceId,
+            ...((await this.claimResolver?.({ subjectId: code.subjectId, workspaceId: code.workspaceId })) ?? {}),
           },
         })
       : randomToken(32);
@@ -71,6 +76,7 @@ export class DevTokenIssuer implements TokenIssuer {
       accessToken,
       subjectId: code.subjectId,
       clientId: code.clientId,
+      workspaceId: code.workspaceId,
       scopes: code.scopes,
       expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
     });

@@ -40,6 +40,7 @@ export class DefaultAuthorizationService implements AuthorizationService {
       codeHash: sha256Hex(code),
       clientId: request.clientId,
       subjectId: request.subjectId,
+      workspaceId: request.workspaceId,
       redirectUri: request.redirectUri,
       scopes,
       codeChallenge: request.codeChallenge,

@@ -8,6 +8,7 @@ export interface GatewayRouteRule {
 
 export interface GatewayRouteDecision {
   matched: boolean;
+  appId?: string;
   upstreamUrl?: string;
   reason: string;
 }
@@ -27,7 +28,7 @@ export function resolveGatewayRoute(
     return { matched: false, reason: 'method_not_allowed' };
   }
 
-  return { matched: true, upstreamUrl: rule.upstreamUrl, reason: 'matched' };
+  return { matched: true, appId: rule.appId, upstreamUrl: rule.upstreamUrl, reason: 'matched' };
 }
 
 function pathMatches(pattern: string, path: string): boolean {

@@ -125,7 +125,7 @@ export class FileAdminService
     return { ok: true, id: created.clientId, message: 'client_created' };
   }
 
-  async createRoutePolicy(command: { productId: string; pathPattern: string; methods: string[]; requiredRoles: string[] }): Promise<AdminCommandResult> {
+  async createRoutePolicy(command: { productId: string; upstreamUrl: string; pathPattern: string; methods: string[]; requiredRoles: string[] }): Promise<AdminCommandResult> {
     const now = new Date().toISOString();
     const id = makeId('policy');
 
@@ -137,6 +137,7 @@ export class FileAdminService
       state.routePolicies.push({
         id,
         productId: command.productId,
+        upstreamUrl: command.upstreamUrl,
         pathPattern: command.pathPattern,
         methods: [...new Set(command.methods.map((method) => method.toUpperCase()))],
         requiredRoles: [...new Set(command.requiredRoles.map((role) => role.trim()).filter(Boolean))],

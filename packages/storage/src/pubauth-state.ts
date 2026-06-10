@@ -2,6 +2,7 @@ export interface StoredAuthorizationCode {
   codeHash: string;
   clientId: string;
   subjectId: string;
+  workspaceId: string;
   redirectUri: string;
   scopes: string[];
   codeChallenge: string;
@@ -14,6 +15,7 @@ export interface StoredAccessToken {
   accessToken: string;
   subjectId: string;
   clientId: string;
+  workspaceId: string;
   scopes: string[];
   expiresAt: string;
 }
@@ -59,6 +61,7 @@ export interface StoredWorkspace {
 export interface StoredRoutePolicy {
   id: string;
   productId: string;
+  upstreamUrl: string;
   pathPattern: string;
   methods: string[];
   requiredRoles: string[];

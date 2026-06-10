@@ -6,10 +6,11 @@ import { buildGatewayRoutes } from './routes.js';
 export async function startGatewayService(): Promise<void> {
   const config = loadConfig('gateway');
   const logger = createLogger('gateway');
+  const routes = await buildGatewayRoutes(config.publicIssuer, config.dataDir);
 
   startNodeServer({
     port: config.port,
-    routes: buildGatewayRoutes(),
+    routes,
   });
 
   logger.info('gateway_service_started', {

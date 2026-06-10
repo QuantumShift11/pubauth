@@ -2,6 +2,7 @@ export interface IssuedAccessToken {
   accessToken: string;
   subjectId: string;
   clientId: string;
+  workspaceId: string;
   scopes: string[];
   expiresAt: string;
 }

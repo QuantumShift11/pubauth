@@ -57,7 +57,10 @@ export class FileAuthorizationCodeStore implements AuthorizationCodeStore {
     if (!code || !isAuthorizationCodeUsable(code, now)) {
       return null;
     }
-    return code;
+    return {
+      ...code,
+      workspaceId: code.workspaceId ?? 'dev-workspace',
+    };
   }
 
   async markUsed(codeHash: string, now = new Date()): Promise<void> {
@@ -100,8 +103,26 @@ export class FileAccessTokenStore implements AccessTokenStore {
       return null;
     }
 
-    return token;
+    return {
+      ...token,
+      workspaceId: token.workspaceId ?? 'dev-workspace',
+    };
   }
+}
+
+export async function resolveTokenClaims(
+  store: JsonFileStore<PubAuthState>,
+  request: { subjectId: string; workspaceId: string },
+): Promise<Record<string, unknown>> {
+  const state = await store.read();
+  const roles = state.assignments
+    .filter((assignment) => assignment.userId === request.subjectId)
+    .filter((assignment) => !assignment.workspaceId || assignment.workspaceId === request.workspaceId)
+    .map((assignment) => assignment.role);
+  return {
+    roles: [...new Set(roles)],
+    groups: [],
+  };
 }
 
 export function createDefaultClientRegistration(clientId: string) {

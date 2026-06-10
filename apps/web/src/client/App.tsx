@@ -18,6 +18,7 @@ const defaultFormState = {
   clientRedirectUri: 'https://app.example.com/callback',
   clientScopes: 'openid profile email',
   policyProductId: 'product-atlas',
+  policyUpstreamUrl: 'http://localhost:8090',
   policyPathPattern: '/dashboard/**',
   policyMethods: 'GET',
   policyRoles: 'admin,editor',
@@ -251,6 +252,10 @@ export function App() {
                 Policy product id
                 <input value={formState.policyProductId} onChange={(event) => updateField('policyProductId', event.target.value)} />
               </label>
+              <label className="wide">
+                Upstream URL
+                <input value={formState.policyUpstreamUrl} onChange={(event) => updateField('policyUpstreamUrl', event.target.value)} />
+              </label>
               <label>
                 Path pattern
                 <input value={formState.policyPathPattern} onChange={(event) => updateField('policyPathPattern', event.target.value)} />
@@ -325,6 +330,7 @@ export function App() {
                     '/api/admin/route-policies',
                     {
                       productId: formState.policyProductId,
+                      upstreamUrl: formState.policyUpstreamUrl,
                       pathPattern: formState.policyPathPattern,
                       methods: formState.policyMethods.split(',').map((value) => value.trim()).filter(Boolean),
                       requiredRoles: formState.policyRoles.split(',').map((value) => value.trim()).filter(Boolean),

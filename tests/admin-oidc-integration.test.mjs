@@ -55,6 +55,7 @@ test('admin provisioning persists state and OIDC uses the created client', async
   const policyResponse = await findRoute(routes, 'POST', '/admin/route-policies').handler(
     request('POST', '/admin/route-policies', {}, {}, {
       productId,
+      upstreamUrl: 'http://upstream.local',
       pathPattern: '/dashboard/**',
       methods: ['GET'],
       requiredRoles: ['admin'],
