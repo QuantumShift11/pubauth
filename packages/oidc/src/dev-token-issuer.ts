@@ -1,4 +1,4 @@
-import { randomToken, sha256Hex } from '../../crypto/src/index.js';
+import { randomToken, sha256Hex, type JwtSigner } from '../../crypto/src/index.js';
 import type { AuthorizationCodeStore } from './authorization-code.js';
 import type { TokenIssuer, TokenRequest, TokenResponse } from './token.js';
 import { verifyPkceS256 } from './pkce.js';
@@ -8,6 +8,7 @@ export class DevTokenIssuer implements TokenIssuer {
   constructor(
     private readonly codes: AuthorizationCodeStore,
     private readonly accessTokens?: AccessTokenStore,
+    private readonly jwtSigner?: JwtSigner,
   ) {}
 
   async issueToken(request: TokenRequest): Promise<TokenResponse> {
@@ -39,8 +40,30 @@ export class DevTokenIssuer implements TokenIssuer {
 
     await this.codes.markUsed(codeHash, new Date());
 
-    const accessToken = randomToken(32);
     const expiresIn = 3600;
+    const accessToken = this.jwtSigner
+      ? this.jwtSigner.sign({
+          audience: code.clientId,
+          subject: code.subjectId,
+          expiresInSeconds: expiresIn,
+          claims: {
+            token_use: 'access',
+            scope: code.scopes.join(' '),
+          },
+        })
+      : randomToken(32);
+
+    const idToken = this.jwtSigner
+      ? this.jwtSigner.sign({
+          audience: code.clientId,
+          subject: code.subjectId,
+          expiresInSeconds: expiresIn,
+          claims: {
+            token_use: 'id',
+            scope: code.scopes.join(' '),
+          },
+        })
+      : randomToken(32);
 
     await this.accessTokens?.save({
       accessToken,
@@ -52,7 +75,7 @@ export class DevTokenIssuer implements TokenIssuer {
 
     return {
       accessToken,
-      idToken: randomToken(32),
+      idToken,
       refreshToken: randomToken(32),
       tokenType: 'Bearer',
       expiresIn,
