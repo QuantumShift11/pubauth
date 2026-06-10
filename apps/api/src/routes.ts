@@ -1,3 +1,4 @@
+import { RsaJwtSigner } from '../../../packages/crypto/src/index.js';
 import type { HttpRequest, Route } from '../../../packages/http/src/index.js';
 import {
   buildDiscoveryDocument,
@@ -20,11 +21,14 @@ const clientStore = new MemoryOidcClientRepository([
     isActive: true,
   },
 ]);
+let jwtSigner = RsaJwtSigner.generate('http://localhost:8080');
 const authorizationService = new DefaultAuthorizationService(clientStore, codeStore);
-const tokenIssuer = new DevTokenIssuer(codeStore, accessTokenStore);
-const userInfoService = new DevUserInfoService(accessTokenStore);
+const tokenIssuer = new DevTokenIssuer(codeStore, accessTokenStore, jwtSigner);
+const userInfoService = new DevUserInfoService(accessTokenStore, jwtSigner);
 
 export function buildApiRoutes(issuer: string): Route[] {
+  jwtSigner = RsaJwtSigner.generate(issuer);
+
   return [
     {
       method: 'GET',
@@ -59,7 +63,7 @@ export function buildApiRoutes(issuer: string): Route[] {
     {
       method: 'GET',
       path: '/oauth2/jwks',
-      handler: () => ({ statusCode: 200, body: { keys: [] } }),
+      handler: () => ({ statusCode: 200, body: jwtSigner.jwks() }),
     },
     {
       method: 'GET',
