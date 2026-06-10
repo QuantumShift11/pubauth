@@ -192,7 +192,7 @@ async function loadOrCreateSigner(stateStore: JsonFileStore<PubAuthState>, issue
 
     const generated = RsaJwtSigner.generateWithMaterial(issuer);
     current.signingKeys.push({
-      keyId: 'dev-rsa-key-1',
+      keyId: generated.signer.keyId,
       algorithm: 'RS256',
       publicKeyPem: generated.publicKeyPem,
       privateKeyPem: generated.privateKeyPem,

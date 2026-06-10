@@ -59,7 +59,7 @@ export class FileAuthorizationCodeStore implements AuthorizationCodeStore {
     }
     return {
       ...code,
-      workspaceId: code.workspaceId ?? 'dev-workspace',
+      workspaceId: code.workspaceId ?? 'default-workspace',
     };
   }
 
@@ -105,7 +105,7 @@ export class FileAccessTokenStore implements AccessTokenStore {
 
     return {
       ...token,
-      workspaceId: token.workspaceId ?? 'dev-workspace',
+      workspaceId: token.workspaceId ?? 'default-workspace',
     };
   }
 }

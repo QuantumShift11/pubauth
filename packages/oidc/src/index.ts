@@ -4,6 +4,8 @@ export * from './authorize.js';
 export * from './client.js';
 export * from './dev-token-issuer.js';
 export * from './dev-userinfo-service.js';
+export { DevTokenIssuer as JwtTokenIssuer } from './dev-token-issuer.js';
+export { DevUserInfoService as JwtUserInfoService } from './dev-userinfo-service.js';
 export * from './file-stores.js';
 export * from './discovery.js';
 export * from './jwks.js';

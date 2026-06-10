@@ -84,7 +84,6 @@ export class DevTokenIssuer implements TokenIssuer {
     return {
       accessToken,
       idToken,
-      refreshToken: randomToken(32),
       tokenType: 'Bearer',
       expiresIn,
       scope: code.scopes.join(' '),

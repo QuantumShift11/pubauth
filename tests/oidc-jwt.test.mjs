@@ -14,7 +14,7 @@ function createRequest(method, path, query = {}, headers = {}, body) {
 test('oidc token endpoint issues signed RS256 tokens and jwks exposes only public keys', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-api-'));
   const issuer = 'https://issuer.example';
-  const clientId = 'dev-client';
+  const clientId = 'pubauth-client';
   const redirectUri = 'http://localhost:3000/callback';
   const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
   const context = await buildApiContext(issuer, dataDir);

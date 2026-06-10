@@ -4,11 +4,11 @@ import type { HttpRequest, Route } from '../../../packages/http/src/index.js';
 import {
   buildDiscoveryDocument,
   DefaultAuthorizationService,
-  DevTokenIssuer,
-  DevUserInfoService,
   FileAccessTokenStore,
   FileAuthorizationCodeStore,
   FileOidcClientRepository,
+  JwtTokenIssuer,
+  JwtUserInfoService,
   resolveTokenClaims,
 } from '../../../packages/oidc/src/index.js';
 import { FileAdminService } from '../../../packages/admin/src/index.js';
@@ -17,8 +17,8 @@ import { JsonFileStore, createDefaultPubAuthState, type PubAuthState } from '../
 export interface ApiRouteContext {
   stateStore: JsonFileStore<PubAuthState>;
   jwtSigner: RsaJwtSigner;
-  tokenIssuer: DevTokenIssuer;
-  userInfoService: DevUserInfoService;
+  tokenIssuer: JwtTokenIssuer;
+  userInfoService: JwtUserInfoService;
   authorizationService: DefaultAuthorizationService;
   adminService: FileAdminService;
 }
@@ -34,13 +34,13 @@ export async function buildApiContext(issuer: string, dataDir = '.pubauth-data')
   return {
     stateStore,
     jwtSigner,
-    tokenIssuer: new DevTokenIssuer(
+    tokenIssuer: new JwtTokenIssuer(
       authorizationCodeStore,
       accessTokenStore,
       jwtSigner,
       (request) => resolveTokenClaims(stateStore, request),
     ),
-    userInfoService: new DevUserInfoService(accessTokenStore, jwtSigner),
+    userInfoService: new JwtUserInfoService(accessTokenStore, jwtSigner),
     authorizationService: new DefaultAuthorizationService(clientStore, authorizationCodeStore),
     adminService,
   };
@@ -172,7 +172,7 @@ async function loadOrCreateSigner(stateStore: JsonFileStore<PubAuthState>, issue
 
     const generated = RsaJwtSigner.generateWithMaterial(issuer);
     current.signingKeys.push({
-      keyId: 'dev-rsa-key-1',
+      keyId: generated.signer.keyId,
       algorithm: 'RS256',
       publicKeyPem: generated.publicKeyPem,
       privateKeyPem: generated.privateKeyPem,
@@ -201,8 +201,8 @@ async function handleAuthorize(request: HttpRequest, authorizationService: Defau
       state: request.query.state,
       codeChallenge: requireQuery(request, 'code_challenge'),
       codeChallengeMethod: 'S256',
-      subjectId: request.query.subject_id ?? 'dev-user',
-      workspaceId: request.query.workspace_id ?? 'dev-workspace',
+      subjectId: request.query.subject_id ?? 'default-user',
+      workspaceId: request.query.workspace_id ?? 'default-workspace',
     });
 
     const redirect = new URL(response.redirectUri);
@@ -217,16 +217,20 @@ async function handleAuthorize(request: HttpRequest, authorizationService: Defau
   }
 }
 
-async function handleToken(request: HttpRequest, tokenIssuer: DevTokenIssuer) {
+async function handleToken(request: HttpRequest, tokenIssuer: JwtTokenIssuer) {
   const body = readBody(request);
 
   try {
+    const grantType = requireBodyString(body, 'grant_type');
+    if (grantType !== 'authorization_code') {
+      throw new Error('unsupported_grant_type');
+    }
+
     const response = await tokenIssuer.issueToken({
-      grantType: requireBodyString(body, 'grant_type') === 'refresh_token' ? 'refresh_token' : 'authorization_code',
+      grantType: 'authorization_code',
       clientId: requireBodyString(body, 'client_id'),
       redirectUri: readOptionalBodyString(body, 'redirect_uri'),
       code: readOptionalBodyString(body, 'code'),
-      refreshToken: readOptionalBodyString(body, 'refresh_token'),
       codeVerifier: readOptionalBodyString(body, 'code_verifier'),
     });
 
@@ -236,7 +240,7 @@ async function handleToken(request: HttpRequest, tokenIssuer: DevTokenIssuer) {
   }
 }
 
-async function handleUserInfo(request: HttpRequest, userInfoService: DevUserInfoService) {
+async function handleUserInfo(request: HttpRequest, userInfoService: JwtUserInfoService) {
   try {
     const accessToken = readBearerToken(request);
     const response = await userInfoService.getUserInfo({ accessToken });

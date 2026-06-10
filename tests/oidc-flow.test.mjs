@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { sha256Base64Url } from '../dist/packages/crypto/src/index.js';
 import {
   DefaultAuthorizationService,
-  DevTokenIssuer,
-  DevUserInfoService,
+  JwtTokenIssuer,
+  JwtUserInfoService,
   MemoryAccessTokenStore,
   MemoryAuthorizationCodeStore,
   MemoryOidcClientRepository,
 } from '../dist/packages/oidc/src/index.js';
 
-test('dev authorization code flow exchanges a code once using PKCE and supports UserInfo', async () => {
+test('oidc authorization code flow exchanges a code once using PKCE and supports UserInfo', async () => {
   const codes = new MemoryAuthorizationCodeStore();
   const accessTokens = new MemoryAccessTokenStore();
   const clients = new MemoryOidcClientRepository([
@@ -25,8 +25,8 @@ test('dev authorization code flow exchanges a code once using PKCE and supports 
 
   const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
   const authorization = new DefaultAuthorizationService(clients, codes);
-  const tokenIssuer = new DevTokenIssuer(codes, accessTokens);
-  const userInfo = new DevUserInfoService(accessTokens);
+  const tokenIssuer = new JwtTokenIssuer(codes, accessTokens);
+  const userInfo = new JwtUserInfoService(accessTokens);
 
   const authResponse = await authorization.start({
     clientId: 'test-client',
@@ -56,13 +56,14 @@ test('dev authorization code flow exchanges a code once using PKCE and supports 
   assert.equal(profile.claims?.client_id, 'test-client');
 
   await assert.rejects(
-    () => tokenIssuer.issueToken({
-      grantType: 'authorization_code',
-      clientId: 'test-client',
-      redirectUri: 'http://localhost/callback',
-      code: authResponse.code,
-      codeVerifier: verifier,
-    }),
+    () =>
+      tokenIssuer.issueToken({
+        grantType: 'authorization_code',
+        clientId: 'test-client',
+        redirectUri: 'http://localhost/callback',
+        code: authResponse.code,
+        codeVerifier: verifier,
+      }),
     /invalid_grant/,
   );
 });

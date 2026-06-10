@@ -51,12 +51,12 @@ export class RsaJwtSigner implements JwtSigner {
     private readonly publicKey: KeyObject | string,
   ) {}
 
-  static generate(issuer: string, keyId = 'dev-rsa-key-1'): RsaJwtSigner {
+  static generate(issuer: string, keyId = 'pubauth-rsa-key-1'): RsaJwtSigner {
     const { signer } = RsaJwtSigner.generateWithMaterial(issuer, keyId);
     return signer;
   }
 
-  static generateWithMaterial(issuer: string, keyId = 'dev-rsa-key-1'): {
+  static generateWithMaterial(issuer: string, keyId = 'pubauth-rsa-key-1'): {
     signer: RsaJwtSigner;
     privateKeyPem: string;
     publicKeyPem: string;

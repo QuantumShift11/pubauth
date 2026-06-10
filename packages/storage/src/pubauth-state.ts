@@ -20,6 +20,16 @@ export interface StoredAccessToken {
   expiresAt: string;
 }
 
+export interface StoredRefreshToken {
+  refreshToken: string;
+  subjectId: string;
+  clientId: string;
+  workspaceId: string;
+  scopes: string[];
+  expiresAt: string;
+  revokedAt?: string;
+}
+
 export interface StoredAuthSession {
   id: string;
   subjectId: string;
@@ -102,6 +112,7 @@ export interface PubAuthState {
   assignments: StoredAssignment[];
   authorizationCodes: StoredAuthorizationCode[];
   accessTokens: StoredAccessToken[];
+  refreshTokens: StoredRefreshToken[];
   sessions: StoredAuthSession[];
   signingKeys: StoredSigningKey[];
 }
@@ -131,9 +142,9 @@ export function createDefaultPubAuthState(): PubAuthState {
     ],
     clients: [
       {
-        id: 'client-dev-client',
+        id: 'client-pubauth-client',
         productId: 'product-atlas',
-        clientId: 'dev-client',
+        clientId: 'pubauth-client',
         clientType: 'public',
         allowedRedirectUris: ['http://localhost:3000/callback'],
         logoutRedirectUris: [],
@@ -163,6 +174,7 @@ export function createDefaultPubAuthState(): PubAuthState {
     assignments: [],
     authorizationCodes: [],
     accessTokens: [],
+    refreshTokens: [],
     sessions: [],
     signingKeys: [],
   };

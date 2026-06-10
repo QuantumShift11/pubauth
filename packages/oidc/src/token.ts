@@ -1,16 +1,14 @@
 export interface TokenRequest {
-  grantType: 'authorization_code' | 'refresh_token' | 'client_credentials';
+  grantType: 'authorization_code';
   clientId: string;
   redirectUri?: string;
   code?: string;
-  refreshToken?: string;
   codeVerifier?: string;
 }
 
 export interface TokenResponse {
   accessToken: string;
   idToken?: string;
-  refreshToken?: string;
   tokenType: 'Bearer';
   expiresIn: number;
   scope: string;
