@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
-import type { ActionResult, BootstrapPayload } from './types.js';
+import type { ActionResult, BootstrapPayload, SelfServiceOverview } from './types.js';
 
-type ConsoleMode = 'admin' | 'tenant';
+type ConsoleMode = 'admin' | 'tenant' | 'user';
 type SectionId = 'overview' | 'products' | 'workspaces' | 'clients' | 'users' | 'policies' | 'sessions' | 'audit' | 'settings';
 type CreateFormType = 'product' | 'workspace' | 'client' | 'policy' | 'role' | 'assignment';
 type DrawerEntityType = 'product' | 'workspace' | 'client' | 'policy' | 'role' | 'assignment' | 'principal' | 'session' | 'signingKey' | 'audit';
@@ -16,6 +16,7 @@ interface LogEntry {
 interface FormState {
   productName: string;
   productSlug: string;
+  productWorkspaceId: string;
   workspaceName: string;
   workspaceSlug: string;
   clientProductId: string;
@@ -59,9 +60,9 @@ interface AuthState {
 }
 
 interface LoginFormState {
-  profile: 'admin' | 'tenant';
-  subjectId: string;
-  workspaceId: string;
+  profile: 'admin' | 'tenant' | 'user';
+  username: string;
+  password: string;
 }
 
 interface LoginIntent {
@@ -69,14 +70,13 @@ interface LoginIntent {
   codeVerifier: string;
   clientId: string;
   redirectUri: string;
-  subjectId: string;
-  workspaceId: string;
   mode: ConsoleMode;
 }
 
 const defaultFormState: FormState = {
   productName: 'Nebula',
   productSlug: 'nebula',
+  productWorkspaceId: 'workspace-core-platform',
   workspaceName: 'Northstar',
   workspaceSlug: 'northstar',
   clientProductId: 'product-atlas',
@@ -87,17 +87,17 @@ const defaultFormState: FormState = {
   policyUpstreamUrl: 'http://localhost:8090',
   policyPathPattern: '/dashboard/**',
   policyMethods: 'GET',
-  policyRoles: 'admin,editor',
+  policyRoles: 'viewer',
   roleName: 'auditor',
   assignmentUserId: 'user-1',
-  assignmentRole: 'admin',
+  assignmentRole: 'viewer',
   assignmentWorkspaceId: 'workspace-core-platform',
 };
 
 const defaultLoginFormState: LoginFormState = {
   profile: 'admin',
-  subjectId: 'admin-user',
-  workspaceId: 'workspace-core-platform',
+  username: 'admin@pubauth.local',
+  password: 'ChangeMe-Admin!1',
 };
 
 const authStorageKey = 'pubauth.auth';
@@ -125,6 +125,13 @@ const tenantSections: Array<{ id: SectionId; label: string; description: string 
   { id: 'settings', label: 'Settings', description: 'Issuer and signing keys' },
 ];
 
+const userSections: Array<{ id: SectionId; label: string; description: string }> = [
+  { id: 'overview', label: 'Profile', description: 'Your identity and access summary' },
+  { id: 'sessions', label: 'Sessions', description: 'Your active sessions' },
+  { id: 'audit', label: 'Activity', description: 'Recent security activity' },
+  { id: 'settings', label: 'Security', description: 'Session and issuer details' },
+];
+
 export function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -132,6 +139,7 @@ export function App() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [selfServiceOverview, setSelfServiceOverview] = useState<SelfServiceOverview | null>(null);
   const [processedLoginCode, setProcessedLoginCode] = useState<string | null>(null);
   const [actionLog, setActionLog] = useState<LogEntry[]>([]);
   const [formState, setFormState] = useState<FormState>(defaultFormState);
@@ -142,6 +150,7 @@ export function App() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -190,6 +199,10 @@ export function App() {
 
     setFormState((current) => ({
       ...current,
+      productWorkspaceId:
+        bootstrap.admin.workspaces.some((item) => item.id === current.productWorkspaceId) && current.productWorkspaceId
+          ? current.productWorkspaceId
+          : nextWorkspaceId || current.productWorkspaceId,
       clientProductId:
         bootstrap.admin.products.some((item) => item.id === current.clientProductId) && current.clientProductId
           ? current.clientProductId
@@ -206,8 +219,13 @@ export function App() {
 
     setLoginForm((current) => ({
       ...current,
-      workspaceId: bootstrap.admin.workspaces.some((item) => item.id === current.workspaceId) && current.workspaceId ? current.workspaceId : nextWorkspaceId || current.workspaceId,
-      subjectId: current.subjectId || (current.profile === 'admin' ? 'admin-user' : 'user-1'),
+      username:
+        current.username ||
+        (current.profile === 'admin'
+          ? 'admin@pubauth.local'
+          : current.profile === 'tenant'
+            ? 'owner@atlas.local'
+            : 'user@atlas.local'),
     }));
   }, [bootstrap]);
 
@@ -249,6 +267,28 @@ export function App() {
   }, [mode, section]);
 
   useEffect(() => {
+    if (!auth) {
+      setSelfServiceOverview(null);
+      return;
+    }
+
+    if (auth.mode !== 'user') {
+      setSelfServiceOverview(null);
+      return;
+    }
+
+    void loadSelfServiceOverview(setSelfServiceOverview, setAuthError);
+  }, [auth]);
+
+  useEffect(() => {
+    if (auth?.mode === 'user') {
+      return;
+    }
+
+    void loadBootstrap();
+  }, [auth?.subjectId, auth?.mode]);
+
+  useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       const isMetaK = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
       if (isMetaK) {
@@ -258,6 +298,10 @@ export function App() {
       }
 
       if (event.key === 'Escape') {
+        if (helpOpen) {
+          setHelpOpen(false);
+          return;
+        }
         if (paletteOpen) {
           setPaletteOpen(false);
           return;
@@ -270,7 +314,7 @@ export function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, drawer]);
+  }, [helpOpen, paletteOpen, drawer]);
 
   async function loadBootstrap() {
     try {
@@ -325,7 +369,7 @@ export function App() {
   }
 
   const admin = bootstrap?.admin;
-  const canAccessAdmin = auth?.roles.includes('admin') ?? false;
+  const canAccessAdmin = auth ? auth.roles.some((role) => role === 'super_admin' || role === 'tenant_admin' || role === 'product_admin') : false;
   const effectiveMode = canAccessAdmin ? mode : 'tenant';
   const sections = getVisibleSections(effectiveMode);
   const activeProduct = admin?.products.find((item) => item.id === selectedProductId) ?? admin?.products[0] ?? null;
@@ -371,6 +415,7 @@ export function App() {
     setSection,
     reload: loadBootstrap,
     mode: effectiveMode,
+    openHelp: () => setHelpOpen(true),
   });
   const filteredPaletteActions = paletteActions.filter((item) =>
     [item.label, item.category, item.description].join(' ').toLowerCase().includes(paletteQuery.trim().toLowerCase()),
@@ -386,12 +431,73 @@ export function App() {
         authError={authError}
         loginForm={loginForm}
         setLoginForm={setLoginForm}
+        onOpenHelp={() => setHelpOpen(true)}
         onLogin={() =>
           void startLogin({
             bootstrap,
             loginForm,
             setAuthBusy,
             setAuthError,
+          })
+        }
+        onLoginAsAdmin={() =>
+          void startLogin({
+            bootstrap,
+            loginForm: {
+              ...loginForm,
+              profile: 'admin',
+              username: 'admin@pubauth.local',
+              password: 'ChangeMe-Admin!1',
+            },
+            setAuthBusy,
+            setAuthError,
+          })
+        }
+        onLoginAsTenant={() =>
+          void startLogin({
+            bootstrap,
+            loginForm: {
+              ...loginForm,
+              profile: 'tenant',
+              username: 'owner@atlas.local',
+              password: 'ChangeMe-Tenant!1',
+            },
+            setAuthBusy,
+            setAuthError,
+          })
+        }
+        onLoginAsUser={() =>
+          void startLogin({
+            bootstrap,
+            loginForm: {
+              ...loginForm,
+              profile: 'user',
+              username: 'user@atlas.local',
+              password: 'ChangeMe-User!1',
+            },
+            setAuthBusy,
+            setAuthError,
+          })
+        }
+      />
+    );
+  }
+
+  if (mode === 'user') {
+    return (
+      <UserPortal
+        auth={auth}
+        authError={authError}
+        authBusy={authBusy}
+        overview={selfServiceOverview}
+        onRefresh={() => void loadSelfServiceOverview(setSelfServiceOverview, setAuthError)}
+        onSignOut={() =>
+          void logout({
+            setAuth,
+            setAuthBusy,
+            setAuthError,
+            setMode,
+            setSection,
           })
         }
       />
@@ -462,29 +568,6 @@ export function App() {
           ))}
         </nav>
 
-        <div className="sidebar-section">
-          <div className="quick-actions-title">
-            <p className="eyebrow">Quick actions</p>
-            <button className="ghost-button compact" type="button" onClick={() => setPaletteOpen(true)}>
-              ⌘K
-            </button>
-          </div>
-          <div className="quick-action-grid">
-            <button className="ghost-button compact" type="button" onClick={() => setDrawer({ kind: 'create', type: 'product' })}>
-              New product
-            </button>
-            <button className="ghost-button compact" type="button" onClick={() => setDrawer({ kind: 'create', type: 'client' })}>
-              New client
-            </button>
-            <button className="ghost-button compact" type="button" onClick={() => setDrawer({ kind: 'create', type: 'policy' })}>
-              New policy
-            </button>
-            <button className="ghost-button compact" type="button" onClick={() => setDrawer({ kind: 'create', type: 'assignment' })}>
-              Assign role
-            </button>
-          </div>
-        </div>
-
         <div className="sidebar-section auth-summary">
           <p className="eyebrow">Signed in</p>
           <strong>{authSummary}</strong>
@@ -543,6 +626,9 @@ export function App() {
             <button className="secondary-button" type="button" onClick={() => setPaletteOpen(true)}>
               Command palette
             </button>
+            <button className="secondary-button" type="button" onClick={() => setHelpOpen(true)}>
+              Help
+            </button>
             <button
               className="ghost-button"
               type="button"
@@ -565,10 +651,10 @@ export function App() {
           <section className="hero panel">
             <div className="hero-copy">
               <p className="eyebrow">{effectiveMode === 'admin' ? 'Operator console' : 'Tenant console'}</p>
-              <h2>{effectiveMode === 'admin' ? 'Operate PubAuth for products, policies, and tenants.' : 'Manage the active product and its tenant-facing auth surface.'}</h2>
+              <h2>{effectiveMode === 'admin' ? 'Operate identity, access, and policy from one control plane.' : 'Manage your product auth surface without platform noise.'}</h2>
               <p className="lede">
-                PubAuth exposes a single React control plane with role-scoped views. The UI stays thin: the API remains the source of truth for
-                OIDC, RBAC, gateway policy, sessions, and signing state.
+                PubAuth exposes one React control plane with role-scoped views. The API remains the source of truth for OIDC, RBAC, gateway
+                policy, sessions, and signing state.
               </p>
               <div className="hero-actions">
                 <button className="primary-button" type="button" onClick={() => setDrawer({ kind: 'create', type: 'client' })}>
@@ -588,8 +674,6 @@ export function App() {
               <Metric label="Workspaces" value={String(admin?.counts.workspaces ?? 0)} />
               <Metric label="Clients" value={String(admin?.counts.clients ?? 0)} />
               <Metric label="Policies" value={String(admin?.counts.routePolicies ?? 0)} />
-              <Metric label="Sessions" value={String(admin?.counts.sessions ?? 0)} />
-              <Metric label="Audit events" value={String(admin?.counts.auditEvents ?? 0)} />
             </div>
           </section>
 
@@ -834,6 +918,17 @@ export function App() {
           onClose={() => setPaletteOpen(false)}
         />
       ) : null}
+
+      {helpOpen ? (
+        <HelpModal
+          onClose={() => setHelpOpen(false)}
+          effectiveMode={effectiveMode}
+          onJumpTo={(nextSection) => {
+            setSection(nextSection);
+            setHelpOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -911,6 +1006,16 @@ function renderDrawerContent(
                   <input value={formState.productSlug} onChange={(event) => updateField('productSlug', event.target.value)} />
                 </label>
                 <label>
+                  Workspace
+                  <select value={formState.productWorkspaceId} onChange={(event) => updateField('productWorkspaceId', event.target.value)}>
+                    {admin.workspaces.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
                   Environment
                   <select value="local" onChange={() => undefined}>
                     <option value="local">Local</option>
@@ -926,6 +1031,7 @@ function renderDrawerContent(
               submit(
                 '/api/admin/products',
                 {
+                  workspaceId: formState.productWorkspaceId,
                   name: formState.productName,
                   slug: formState.productSlug,
                   environment: 'local',
@@ -1644,6 +1750,124 @@ function CommandPalette({
   );
 }
 
+function HelpModal({
+  effectiveMode,
+  onClose,
+  onJumpTo,
+}: {
+  effectiveMode: ConsoleMode;
+  onClose: () => void;
+  onJumpTo: (section: Exclude<SectionId, 'overview'> | 'overview') => void;
+}) {
+  return (
+    <>
+      <button className="palette-backdrop" type="button" aria-label="Close help" onClick={onClose} />
+      <div className="help-modal panel" role="dialog" aria-modal="true" aria-label="PubAuth usage guide">
+        <div className="help-modal-head">
+          <div>
+            <p className="eyebrow">Usage guide</p>
+            <h3>How to use PubAuth</h3>
+            <p className="help-lede">
+              The UI is split into two paths. Admin operators manage the platform. Tenant owners manage a single product scope.
+            </p>
+          </div>
+          <button className="ghost-button compact" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="help-modal-grid">
+          <article className="help-card">
+            <div className="help-card-head">
+              <div>
+                <p className="eyebrow">Admin operators</p>
+                <h3>Platform setup</h3>
+              </div>
+              <Badge>Platform-wide</Badge>
+            </div>
+            <ol className="guide-steps compact">
+              <li>Check `Overview` to confirm issuer, JWKS, and counts.</li>
+              <li>Open `Products` and create the application you want to protect.</li>
+              <li>Open `Clients` and register the exact redirect URI.</li>
+              <li>Open `Users & Roles` and assign the role that should sign in.</li>
+              <li>Open `Route Policies` and keep the rest denied by default.</li>
+            </ol>
+            <div className="guide-actions">
+              <button className="secondary-button" type="button" onClick={() => onJumpTo('overview')}>
+                Overview
+              </button>
+              <button className="secondary-button" type="button" onClick={() => onJumpTo('clients')}>
+                Clients
+              </button>
+              <button className="ghost-button" type="button" onClick={() => onJumpTo('policies')}>
+                Policies
+              </button>
+            </div>
+          </article>
+
+          <article className="help-card">
+            <div className="help-card-head">
+              <div>
+                <p className="eyebrow">Tenant owners</p>
+                <h3>Product-scoped setup</h3>
+              </div>
+              <Badge>{effectiveMode === 'admin' ? 'Available in tenant mode' : 'Current mode'}</Badge>
+            </div>
+            <ol className="guide-steps compact">
+              <li>Select the right `Product` and `Workspace` first.</li>
+              <li>Register the tenant app in `Clients`.</li>
+              <li>Map people or groups in `Users & Roles`.</li>
+              <li>Protect the app with `Route Policies`.</li>
+              <li>Use `Sessions` and `Audit` to confirm behavior.</li>
+            </ol>
+            <div className="guide-actions">
+              <button className="secondary-button" type="button" onClick={() => onJumpTo('clients')}>
+                Clients
+              </button>
+              <button className="secondary-button" type="button" onClick={() => onJumpTo('users')}>
+                Users
+              </button>
+              <button className="ghost-button" type="button" onClick={() => onJumpTo('sessions')}>
+                Sessions
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div className="help-modal-grid help-modal-grid-small">
+          <article className="help-card">
+            <p className="eyebrow">What to fill in</p>
+            <dl className="guide-field-list">
+              <div>
+                <dt>Mode</dt>
+                <dd>Admin operator, tenant owner, or end user.</dd>
+              </div>
+              <div>
+                <dt>Username</dt>
+                <dd>Use a local account such as `admin@pubauth.local` or a provider-backed identity later.</dd>
+              </div>
+              <div>
+                <dt>Password</dt>
+                <dd>Local accounts are persisted and hashed; seeded credentials are only for initial bootstrap.</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article className="help-card">
+            <p className="eyebrow">What happens next</p>
+            <ol className="guide-steps compact">
+              <li>The browser redirects to the issuer authorize endpoint.</li>
+              <li>PubAuth returns the code through the web callback.</li>
+              <li>The token endpoint issues signed RS256 tokens.</li>
+              <li>The console opens in the correct admin, tenant, or self-service scope.</li>
+            </ol>
+          </article>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function LoginScreen({
   bootstrap,
   loading,
@@ -1652,7 +1876,11 @@ function LoginScreen({
   authError,
   loginForm,
   setLoginForm,
+  onOpenHelp,
   onLogin,
+  onLoginAsAdmin,
+  onLoginAsTenant,
+  onLoginAsUser,
 }: {
   bootstrap: BootstrapPayload | null;
   loading: boolean;
@@ -1661,10 +1889,12 @@ function LoginScreen({
   authError: string | null;
   loginForm: LoginFormState;
   setLoginForm: (updater: LoginFormState | ((current: LoginFormState) => LoginFormState)) => void;
+  onOpenHelp: () => void;
   onLogin: () => void;
+  onLoginAsAdmin: () => void;
+  onLoginAsTenant: () => void;
+  onLoginAsUser: () => void;
 }) {
-  const workspaces = bootstrap?.admin.workspaces ?? [];
-
   return (
     <div className="auth-shell">
       <section className="auth-panel panel">
@@ -1677,9 +1907,18 @@ function LoginScreen({
         </div>
 
         <p className="lede">
-          Admin operators and tenant users sign in through the same Authorization Code + PKCE flow. This dev surface uses seeded subjects
-          so you can validate the platform without inventing a separate password system.
+          Admin operators, tenant owners, and end users sign in through the same Authorization Code + PKCE flow. PubAuth creates a real
+          control-plane session first, then completes OIDC against the issuer.
         </p>
+
+        <div className="login-inline-guide">
+          <span>Admin: platform-wide auth, policy, keys, and audit.</span>
+          <span>Tenant: product-scoped clients, routes, and memberships.</span>
+          <span>User: profile, sessions, and recent activity.</span>
+          <button className="ghost-button compact" type="button" onClick={onOpenHelp}>
+            Open guide
+          </button>
+        </div>
 
         <div className="login-grid">
           <label>
@@ -1688,81 +1927,92 @@ function LoginScreen({
               value={loginForm.profile}
               onChange={(event) =>
                 setLoginForm((current) => {
-                  const profile = event.target.value === 'admin' ? 'admin' : 'tenant';
+                  const profile =
+                    event.target.value === 'admin' ? 'admin' : event.target.value === 'tenant' ? 'tenant' : 'user';
                   return {
                     ...current,
                     profile,
-                    subjectId: profile === 'admin' ? 'admin-user' : 'user-1',
+                    username:
+                      profile === 'admin'
+                        ? 'admin@pubauth.local'
+                        : profile === 'tenant'
+                          ? 'owner@atlas.local'
+                          : 'user@atlas.local',
+                    password:
+                      profile === 'admin'
+                        ? 'ChangeMe-Admin!1'
+                        : profile === 'tenant'
+                          ? 'ChangeMe-Tenant!1'
+                          : 'ChangeMe-User!1',
                   };
                 })
               }
             >
               <option value="admin">Admin operator</option>
-              <option value="tenant">Tenant user</option>
+              <option value="tenant">Tenant owner</option>
+              <option value="user">End user</option>
             </select>
           </label>
           <label>
-            Subject ID
+            Username
             <input
-              value={loginForm.subjectId}
-              onChange={(event) => setLoginForm((current) => ({ ...current, subjectId: event.target.value }))}
-              placeholder="admin-user"
+              value={loginForm.username}
+              onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
+              placeholder="admin@pubauth.local"
+              autoComplete="username"
             />
           </label>
           <label className="wide">
-            Workspace
-            <select
-              value={loginForm.workspaceId}
-              onChange={(event) => setLoginForm((current) => ({ ...current, workspaceId: event.target.value }))}
-            >
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.name}
-                </option>
-              ))}
-            </select>
+            Password
+            <input
+              value={loginForm.password}
+              onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+              placeholder="ChangeMe-Admin!1"
+              type="password"
+              autoComplete="current-password"
+            />
           </label>
         </div>
 
+        <details className="advanced-login">
+          <summary>Bootstrap credentials</summary>
+          <div className="advanced-login-body">
+            <p className="help-text">
+              Seeded local accounts exist for immediate setup. In production, replace them with rotated credentials or external providers.
+            </p>
+          </div>
+        </details>
+
         <div className="login-actions">
           <button className="primary-button" type="button" onClick={onLogin} disabled={authBusy || loading || !bootstrap}>
-            {authBusy ? 'Redirecting to OIDC' : 'Continue with OIDC'}
+            {authBusy ? 'Signing in and redirecting' : 'Sign in'}
           </button>
           <button
             className="secondary-button"
             type="button"
-            onClick={() =>
-              setLoginForm({
-                profile: 'admin',
-                subjectId: 'admin-user',
-                workspaceId: workspaces[0]?.id ?? 'workspace-core-platform',
-              })
-            }
+            onClick={onLoginAsAdmin}
           >
-            Use admin demo
+            Admin demo
           </button>
           <button
             className="ghost-button"
             type="button"
-            onClick={() =>
-              setLoginForm({
-                profile: 'tenant',
-                subjectId: 'user-1',
-                workspaceId: workspaces[0]?.id ?? 'workspace-core-platform',
-              })
-            }
+            onClick={onLoginAsTenant}
           >
-            Use tenant demo
+            Tenant demo
+          </button>
+          <button className="ghost-button" type="button" onClick={onLoginAsUser}>
+            User demo
           </button>
         </div>
 
         <div className="login-meta">
           <KeyValueList
             items={[
-              ['Issuer', bootstrap?.runtime.issuer ?? 'pending'],
+              ['API issuer', bootstrap?.runtime.issuer ?? 'pending'],
               ['API base', bootstrap?.runtime.apiBase ?? 'pending'],
-              ['Authorize', bootstrap?.discovery.authorization_endpoint ?? 'pending'],
-              ['Token', bootstrap?.discovery.token_endpoint ?? 'pending'],
+              ['Browser authorize', '/api/auth/authorize'],
+              ['Browser token', '/api/auth/token'],
             ]}
           />
         </div>
@@ -1776,23 +2026,178 @@ function LoginScreen({
       </section>
 
       <aside className="auth-panel panel">
-        <SectionHead title="How it works" subtitle="Operator and tenant access" />
-        <ul className="feature-list">
-          <li>Admin operators authenticate as the seeded `admin-user` subject in the core workspace.</li>
-          <li>Product users authenticate with a workspace-scoped subject and receive roles from assignments.</li>
-          <li>OIDC uses the code flow only, with PKCE enforced at the token endpoint.</li>
-          <li>The browser exchanges the callback code through the web proxy, so no CORS hacks are needed.</li>
-        </ul>
-
-        <Card title="Runtime posture" subtitle="Current surface">
-          <div className="stat-grid auth-stat-grid">
-            <StatCard label="Products" value={String(bootstrap?.admin.counts.products ?? 0)} note="Registry entries" />
-            <StatCard label="Workspaces" value={String(bootstrap?.admin.counts.workspaces ?? 0)} note="Tenant scopes" />
-            <StatCard label="Roles" value={String(bootstrap?.admin.counts.roles ?? 0)} note="RBAC catalog" />
-            <StatCard label="Sessions" value={String(bootstrap?.admin.counts.sessions ?? 0)} note="Active browser sessions" />
+        <div className="launch-card">
+          <p className="eyebrow">Choose a path</p>
+          <h3>One UI, three access patterns</h3>
+          <p className="path-copy">
+            Admin operators manage the platform, tenant owners manage one product scope, and end users get their own self-service surface.
+          </p>
+          <div className="launch-actions">
+            <button className="secondary-button" type="button" onClick={onLoginAsAdmin}>
+              Admin demo
+            </button>
+            <button className="ghost-button" type="button" onClick={onLoginAsTenant}>
+              Tenant demo
+            </button>
+            <button className="ghost-button" type="button" onClick={onLoginAsUser}>
+              User demo
+            </button>
           </div>
-        </Card>
+          <div className="launch-divider" />
+          <KeyValueList
+            items={[
+              ['Mode', 'Admin operator, tenant owner, or end user'],
+              ['Auth path', 'Local account session plus OIDC code flow'],
+              ['Surface', 'Control plane or self-service by role'],
+            ]}
+          />
+          <button className="ghost-button full-width" type="button" onClick={onOpenHelp}>
+            Open usage guide
+          </button>
+        </div>
       </aside>
+    </div>
+  );
+}
+
+function UserPortal({
+  auth,
+  authError,
+  authBusy,
+  overview,
+  onRefresh,
+  onSignOut,
+}: {
+  auth: AuthState;
+  authError: string | null;
+  authBusy: boolean;
+  overview: SelfServiceOverview | null;
+  onRefresh: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <div className="app-shell">
+      <aside className="sidebar panel">
+        <div className="brand-block">
+          <div className="brand-mark">P</div>
+          <div>
+            <p className="eyebrow">Self-service portal</p>
+            <h1>PubAuth</h1>
+          </div>
+        </div>
+
+        <div className="sidebar-section auth-summary">
+          <p className="eyebrow">Signed in</p>
+          <strong>{overview?.user.displayName ?? auth.subjectId}</strong>
+          <p className="sidebar-note">{overview?.user.email ?? auth.subjectId}</p>
+          <button className="ghost-button" type="button" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      <div className="workspace">
+        <header className="topbar panel">
+          <div className="topbar-left">
+            <div>
+              <p className="eyebrow">End-user surface</p>
+              <div className="topline">
+                <StatusPill tone={overview ? 'success' : authBusy ? 'muted' : 'neutral'}>
+                  {overview ? 'Live' : authBusy ? 'Loading' : 'Ready'}
+                </StatusPill>
+                <StatusPill tone="neutral">{auth.workspaceId}</StatusPill>
+              </div>
+            </div>
+          </div>
+          <div className="topbar-actions">
+            <button className="secondary-button" type="button" onClick={onRefresh}>
+              Refresh
+            </button>
+            <button className="ghost-button" type="button" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        <main className="content">
+          <section className="hero panel">
+            <div className="hero-copy">
+              <p className="eyebrow">Your access</p>
+              <h2>Profile, sessions, and recent activity in one place.</h2>
+              <p className="lede">
+                This surface is user-scoped. It does not expose control-plane administration and only shows your current identity state.
+              </p>
+            </div>
+            <div className="hero-side">
+              <KeyValueList
+                items={[
+                  ['Subject', overview?.user.subjectId ?? auth.subjectId],
+                  ['Username', overview?.user.username ?? 'loading'],
+                  ['Workspace', overview?.user.workspaceId ?? auth.workspaceId],
+                  ['Roles', overview?.user.roles.join(', ') || 'none'],
+                ]}
+              />
+            </div>
+          </section>
+
+          <section className="overview-grid">
+            <div className="section-panel panel">
+              <SectionHead title="Profile" subtitle="Identity record" />
+              <KeyValueList
+                items={[
+                  ['Display name', overview?.user.displayName ?? 'loading'],
+                  ['Email', overview?.user.email ?? 'loading'],
+                  ['Auth mode', 'Local account + OIDC'],
+                  ['Session count', String(overview?.sessions.length ?? 0)],
+                ]}
+              />
+            </div>
+
+            <div className="section-panel panel">
+              <SectionTable
+                title="Sessions"
+                subtitle="Active browser sessions"
+                actionLabel="Refresh"
+                onAction={onRefresh}
+                columns={['Session', 'Created', 'Expires', 'State']}
+                items={overview?.sessions ?? []}
+                renderRow={(item: SelfServiceOverview['sessions'][number]) => [
+                  item.id,
+                  formatTimestamp(item.createdAt),
+                  formatTimestamp(item.expiresAt),
+                  item.revokedAt ? 'revoked' : 'active',
+                ]}
+                empty={<EmptyState title="No sessions" description="New sessions appear after successful sign-in." />}
+              />
+            </div>
+          </section>
+
+          <section className="section-panel panel">
+            <SectionTable
+              title="Recent Activity"
+              subtitle="Security-relevant events"
+              actionLabel="Refresh"
+              onAction={onRefresh}
+              columns={['Event', 'Outcome', 'Description', 'Time']}
+              items={overview?.recentAuditEvents ?? []}
+              renderRow={(item: SelfServiceOverview['recentAuditEvents'][number]) => [
+                item.action,
+                item.outcome,
+                item.description,
+                formatTimestamp(item.createdAt),
+              ]}
+              empty={<EmptyState title="No recent activity" description="Login and security events will appear here." />}
+            />
+          </section>
+
+          {authError ? (
+            <section className="login-error">
+              <strong>Portal error</strong>
+              <span>{authError}</span>
+            </section>
+          ) : null}
+        </main>
+      </div>
     </div>
   );
 }
@@ -1831,6 +2236,10 @@ function getDrawerTitle(drawer: DrawerState): string {
 }
 
 function getVisibleSections(mode: ConsoleMode) {
+  if (mode === 'user') {
+    return userSections;
+  }
+
   return mode === 'admin' ? adminSections : tenantSections;
 }
 
@@ -1840,6 +2249,7 @@ function buildPaletteActions({
   setMode,
   setSection,
   reload,
+  openHelp,
   mode,
 }: {
   setPaletteOpen: (value: boolean) => void;
@@ -1847,12 +2257,14 @@ function buildPaletteActions({
   setMode: (value: ConsoleMode) => void;
   setSection: (value: SectionId) => void;
   reload: () => Promise<void>;
+  openHelp: () => void;
   mode: ConsoleMode;
 }): PaletteAction[] {
   return [
     { id: 'refresh', label: 'Refresh runtime', category: 'Runtime', description: 'Reload bootstrap and live admin inventory.', run: () => void reload() },
     { id: 'admin', label: 'Switch to admin console', category: 'Mode', description: 'Show platform-wide inventory and controls.', run: () => setMode('admin') },
     { id: 'tenant', label: 'Switch to tenant console', category: 'Mode', description: 'Show the active product and workspace scope.', run: () => setMode('tenant') },
+    { id: 'help', label: 'Open help guide', category: 'Help', description: 'Show the usage guide modal.', run: () => openHelp() },
     { id: 'overview', label: 'Open overview', category: 'Section', description: 'View health, counts, and recent activity.', run: () => setSection('overview') },
     { id: 'clients', label: 'Open clients', category: 'Section', description: 'Inspect OIDC client registrations.', run: () => setSection('clients') },
     { id: 'policies', label: 'Open policies', category: 'Section', description: 'Inspect gateway route rules.', run: () => setSection('policies') },
@@ -1987,21 +2399,36 @@ async function startLogin({
     const state = crypto.randomUUID();
     const clientId = bootstrap.admin.clients[0]?.clientId ?? 'pubauth-client';
     const redirectUri = `${window.location.origin}/auth/callback`;
-    const subjectId = loginForm.subjectId.trim() || (loginForm.profile === 'admin' ? 'admin-user' : 'user-1');
-    const workspaceId = loginForm.workspaceId.trim() || (bootstrap.admin.workspaces[0]?.id ?? 'workspace-core-platform');
+
+    const sessionResponse = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: loginForm.username.trim(),
+        password: loginForm.password,
+      }),
+    });
+    const sessionPayload = (await sessionResponse.json()) as {
+      ok?: boolean;
+      error?: string;
+    };
+    if (!sessionResponse.ok || !sessionPayload.ok) {
+      throw new Error(sessionPayload.error ?? `session_bootstrap_failed_${sessionResponse.status}`);
+    }
+
     const intent: LoginIntent = {
       state,
       codeVerifier,
       clientId,
       redirectUri,
-      subjectId,
-      workspaceId,
-      mode: loginForm.profile === 'admin' ? 'admin' : 'tenant',
+      mode: loginForm.profile,
     };
 
     saveLoginIntent(intent);
 
-    const authorizeUrl = new URL(bootstrap.discovery.authorization_endpoint);
+    const authorizeUrl = new URL('/api/auth/authorize', window.location.origin);
     authorizeUrl.searchParams.set('client_id', clientId);
     authorizeUrl.searchParams.set('redirect_uri', redirectUri);
     authorizeUrl.searchParams.set('response_type', 'code');
@@ -2009,8 +2436,6 @@ async function startLogin({
     authorizeUrl.searchParams.set('code_challenge', codeChallenge);
     authorizeUrl.searchParams.set('code_challenge_method', 'S256');
     authorizeUrl.searchParams.set('state', state);
-    authorizeUrl.searchParams.set('subject_id', subjectId);
-    authorizeUrl.searchParams.set('workspace_id', workspaceId);
 
     window.location.assign(authorizeUrl.toString());
   } catch (caught) {
@@ -2100,8 +2525,9 @@ async function completeLogin({
 
     const roles = normalizeStringArray(userInfoPayload.roles);
     const groups = normalizeStringArray(userInfoPayload.groups);
-    const workspaceId = userInfoPayload.workspace ?? intent.workspaceId;
-    const mode = intent.mode === 'admin' && roles.includes('admin') ? 'admin' : 'tenant';
+    const workspaceId = userInfoPayload.workspace ?? '';
+    const hasAdminRole = roles.some((role) => role === 'super_admin' || role === 'tenant_admin' || role === 'product_admin');
+    const mode = intent.mode === 'admin' && hasAdminRole ? 'admin' : intent.mode === 'tenant' && hasAdminRole ? 'tenant' : 'user';
     const authState: AuthState = {
       accessToken: tokenPayload.accessToken,
       idToken: tokenPayload.idToken,
@@ -2128,7 +2554,23 @@ async function completeLogin({
   }
 }
 
-function logout({
+async function loadSelfServiceOverview(
+  setOverview: (value: SelfServiceOverview | null) => void,
+  setAuthError: (value: string | null) => void,
+) {
+  try {
+    const response = await fetch('/api/me/overview');
+    const payload = (await response.json()) as SelfServiceOverview & { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `self_service_overview_failed_${response.status}`);
+    }
+    setOverview(payload);
+  } catch (caught) {
+    setAuthError(caught instanceof Error ? caught.message : 'self_service_overview_failed');
+  }
+}
+
+async function logout({
   setAuth,
   setAuthBusy,
   setAuthError,
@@ -2141,6 +2583,12 @@ function logout({
   setMode: (value: ConsoleMode) => void;
   setSection: (value: SectionId) => void;
 }) {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch {
+    // Local state must still clear even if the session endpoint is unavailable.
+  }
+
   clearAuthState();
   clearLoginIntent();
   setAuth(null);
@@ -2181,8 +2629,6 @@ function saveLoginIntent(value: {
   codeVerifier: string;
   clientId: string;
   redirectUri: string;
-  subjectId: string;
-  workspaceId: string;
   mode: ConsoleMode;
 }) {
   window.sessionStorage.setItem(loginIntentStorageKey, JSON.stringify(value));
@@ -2202,9 +2648,7 @@ function readLoginIntent(): LoginIntent | null {
       typeof parsed.codeVerifier !== 'string' ||
       typeof parsed.clientId !== 'string' ||
       typeof parsed.redirectUri !== 'string' ||
-      typeof parsed.subjectId !== 'string' ||
-      typeof parsed.workspaceId !== 'string' ||
-      (parsed.mode !== 'admin' && parsed.mode !== 'tenant')
+      (parsed.mode !== 'admin' && parsed.mode !== 'tenant' && parsed.mode !== 'user')
     ) {
       return null;
     }

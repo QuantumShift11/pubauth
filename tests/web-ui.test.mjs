@@ -86,6 +86,42 @@ test('web bootstrap route composes API health, discovery, and jwks', async () =>
   assert.equal(calls.length, 4);
 });
 
+test('web bootstrap stays anonymous when admin overview is unauthorized', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/health')) {
+      return jsonResponse({ status: 'ok', service: 'api' });
+    }
+    if (url.endsWith('/.well-known/openid-configuration')) {
+      return jsonResponse({
+        issuer: 'https://issuer.example',
+        authorization_endpoint: 'https://issuer.example/oauth2/authorize',
+        token_endpoint: 'https://issuer.example/oauth2/token',
+        jwks_uri: 'https://issuer.example/oauth2/jwks',
+        userinfo_endpoint: 'https://issuer.example/oauth2/userinfo',
+      });
+    }
+    if (url.endsWith('/admin/overview')) {
+      return jsonResponse({ error: 'login_required' }, 401);
+    }
+    return jsonResponse({
+      keys: [{ kid: 'dev-key', alg: 'RS256', use: 'sig', kty: 'RSA' }],
+    });
+  };
+
+  const routes = buildWebRoutes('https://api.example', '/tmp/web', fetchImpl);
+  const route = findRoute(routes, 'GET', '/api/bootstrap');
+  const response = await route.handler({
+    method: 'GET',
+    path: '/api/bootstrap',
+    query: {},
+    headers: {},
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.admin.counts.products, 0);
+  assert.equal(response.body.admin.clients.length, 0);
+});
+
 test('web admin proxy forwards json payloads to api', async () => {
   const fetchImpl = async (url, init) =>
     jsonResponse(
@@ -123,6 +159,22 @@ test('web auth proxy forwards oidc token and userinfo requests', async () => {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url, init });
+    if (url.includes('/oauth2/authorize')) {
+      return {
+        status: 302,
+        headers: {
+          get(name) {
+            return name.toLowerCase() === 'location' ? 'http://localhost:3001/auth/callback?code=abc&state=xyz' : null;
+          },
+        },
+        async json() {
+          return { redirect: 'http://localhost:3001/auth/callback?code=abc&state=xyz' };
+        },
+        async text() {
+          return JSON.stringify({ redirect: 'http://localhost:3001/auth/callback?code=abc&state=xyz' });
+        },
+      };
+    }
     if (url.endsWith('/oauth2/token')) {
       return jsonResponse({
         accessToken: 'access.jwt.token',
@@ -144,10 +196,33 @@ test('web auth proxy forwards oidc token and userinfo requests', async () => {
   };
 
   const routes = buildWebRoutes('https://api.example', '/tmp/web', fetchImpl);
+  const authorizeRoute = findRoute(routes, 'GET', '/api/auth/authorize');
   const tokenRoute = findRoute(routes, 'POST', '/api/auth/token');
   const userInfoRoute = findRoute(routes, 'GET', '/api/auth/userinfo');
+  assert.ok(authorizeRoute);
   assert.ok(tokenRoute);
   assert.ok(userInfoRoute);
+
+  const authorizeResponse = await authorizeRoute.handler({
+    method: 'GET',
+    path: '/api/auth/authorize',
+    query: {
+      client_id: 'pubauth-client',
+      redirect_uri: 'http://localhost:3001/auth/callback',
+      response_type: 'code',
+      scope: 'openid profile email',
+      code_challenge: 'challenge',
+      code_challenge_method: 'S256',
+      state: 'xyz',
+    },
+    headers: {},
+  });
+
+  assert.equal(authorizeResponse.statusCode, 302);
+  assert.equal(
+    authorizeResponse.headers.location,
+    'https://api.example/oauth2/authorize?client_id=pubauth-client&redirect_uri=http%3A%2F%2Flocalhost%3A3001%2Fauth%2Fcallback&response_type=code&scope=openid+profile+email&code_challenge=challenge&code_challenge_method=S256&state=xyz',
+  );
 
   const tokenResponse = await tokenRoute.handler({
     method: 'POST',
@@ -179,6 +254,54 @@ test('web auth proxy forwards oidc token and userinfo requests', async () => {
   assert.equal(calls.length, 2);
   assert.equal(calls[0].url, 'https://api.example/oauth2/token');
   assert.equal(calls[1].url, 'https://api.example/oauth2/userinfo');
+});
+
+test('web auth login proxy forwards set-cookie', async () => {
+  const fetchImpl = async (url, init) => {
+    if (url.endsWith('/auth/login')) {
+      return {
+        status: 200,
+        headers: {
+          get(name) {
+            const lower = name.toLowerCase();
+            if (lower === 'content-type') {
+              return 'application/json';
+            }
+            if (lower === 'set-cookie') {
+              return 'pubauth_session=session-1; Path=/; HttpOnly; SameSite=Lax';
+            }
+            return null;
+          },
+        },
+        async json() {
+          return { ok: true, sessionId: 'session-1' };
+        },
+        async text() {
+          return JSON.stringify({ ok: true, sessionId: 'session-1' });
+        },
+      };
+    }
+
+    return jsonResponse({ ok: false }, 404);
+  };
+
+  const routes = buildWebRoutes('https://api.example', '/tmp/web', fetchImpl);
+  const route = findRoute(routes, 'POST', '/api/auth/login');
+  assert.ok(route);
+
+  const response = await route.handler({
+    method: 'POST',
+    path: '/api/auth/login',
+    query: {},
+    headers: {},
+    body: {
+      username: 'admin@pubauth.local',
+      password: 'ChangeMe-Admin!1',
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers?.['set-cookie'], 'pubauth_session=session-1; Path=/; HttpOnly; SameSite=Lax');
 });
 
 function jsonResponse(body, status = 200) {

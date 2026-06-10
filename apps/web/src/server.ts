@@ -23,7 +23,7 @@ export async function startWebService(): Promise<void> {
 
   startNodeServer({
     port: config.port,
-    routes: buildWebRoutes(config.apiBase, clientRoot),
+    routes: buildWebRoutes(config.apiBase, clientRoot, fetch, config.publicIssuer),
   });
 }
 
@@ -31,15 +31,21 @@ export function buildWebRoutes(
   apiBase: string,
   clientRootDir: string,
   fetchImpl: typeof fetch = fetch,
+  publicIssuer = apiBase,
 ): Route[] {
   return [
     {
       method: 'GET',
       path: '/api/bootstrap',
-      handler: async () => ({
+      handler: async (request) => ({
         statusCode: 200,
-        body: await buildBootstrap(apiBase, fetchImpl),
+        body: await buildBootstrap(apiBase, fetchImpl, request),
       }),
+    },
+    {
+      method: 'GET',
+      path: '/api/admin/overview',
+      handler: async (request) => proxyJson(apiBase, '/admin/overview', request, fetchImpl),
     },
     {
       method: 'POST',
@@ -77,9 +83,39 @@ export function buildWebRoutes(
       handler: async (request) => proxyJson(apiBase, '/oauth2/token', request, fetchImpl),
     },
     {
+      method: 'POST',
+      path: '/api/auth/login',
+      handler: async (request) => proxyJson(apiBase, '/auth/login', request, fetchImpl),
+    },
+    {
+      method: 'POST',
+      path: '/api/auth/logout',
+      handler: async (request) => proxyJson(apiBase, '/auth/logout', request, fetchImpl),
+    },
+    {
+      method: 'GET',
+      path: '/api/auth/session',
+      handler: async (request) => proxyJson(apiBase, '/auth/session', request, fetchImpl),
+    },
+    {
+      method: 'GET',
+      path: '/api/auth/authorize',
+      handler: async (request) => proxyRedirect(publicIssuer, '/oauth2/authorize', request),
+    },
+    {
+      method: 'GET',
+      path: '/api/auth/broker/**',
+      handler: async (request) => proxyDynamicRedirect(publicIssuer, request.path.replace('/api', ''), request),
+    },
+    {
       method: 'GET',
       path: '/api/auth/userinfo',
       handler: async (request) => proxyJson(apiBase, '/oauth2/userinfo', request, fetchImpl),
+    },
+    {
+      method: 'GET',
+      path: '/api/me/overview',
+      handler: async (request) => proxyJson(apiBase, '/me/overview', request, fetchImpl),
     },
     {
       method: 'GET',
@@ -99,13 +135,18 @@ export function buildWebRoutes(
   ];
 }
 
-async function buildBootstrap(apiBase: string, fetchImpl: typeof fetch) {
+async function buildBootstrap(apiBase: string, fetchImpl: typeof fetch, request: HttpRequest) {
   const [healthResponse, discoveryResponse, jwksResponse, adminResponse] = await Promise.all([
     fetchJson<HealthPayload>(`${apiBase}/health`, fetchImpl),
     fetchJson<DiscoveryPayload>(`${apiBase}/.well-known/openid-configuration`, fetchImpl),
     fetchJson<JwksPayload>(`${apiBase}/oauth2/jwks`, fetchImpl),
-    fetchJson<AdminOverviewPayload>(`${apiBase}/admin/overview`, fetchImpl),
+    fetchJson<AdminOverviewPayload>(`${apiBase}/admin/overview`, fetchImpl, toForwardHeaders(request.headers)),
   ]);
+
+  const admin =
+    adminResponse.status === 401 || adminResponse.status === 403
+      ? emptyAdminOverview()
+      : adminResponse.body;
 
   return {
     api: {
@@ -114,7 +155,7 @@ async function buildBootstrap(apiBase: string, fetchImpl: typeof fetch) {
     },
     discovery: discoveryResponse.body,
     jwks: jwksResponse.body,
-    admin: adminResponse.body,
+    admin,
     runtime: {
       issuer: discoveryResponse.body.issuer,
       apiBase,
@@ -123,18 +164,70 @@ async function buildBootstrap(apiBase: string, fetchImpl: typeof fetch) {
 }
 
 async function proxyJson(apiBase: string, path: string, request: HttpRequest, fetchImpl: typeof fetch) {
+  const method = String(request.method);
+  const canSendBody = method !== 'GET' && method !== 'HEAD';
   const response = await fetchImpl(`${apiBase}${path}`, {
-    method: request.method,
+    method,
     headers: {
+      ...toForwardHeaders(request.headers),
       'content-type': 'application/json',
     },
-    body: JSON.stringify(request.body ?? {}),
+    body: canSendBody ? JSON.stringify(request.body ?? {}) : undefined,
   });
 
   return {
     statusCode: response.status,
+    headers: readForwardResponseHeaders(response),
     body: await readResponseBody(response),
   };
+}
+
+async function proxyRedirect(publicIssuer: string, path: string, request: HttpRequest) {
+  const url = new URL(`${publicIssuer}${path}`);
+  for (const [key, value] of Object.entries(request.query)) {
+    if (typeof value === 'string') {
+      url.searchParams.set(key, value);
+    }
+  }
+
+  return {
+    statusCode: 302,
+    headers: {
+      location: url.toString(),
+    },
+    body: {
+      redirect: url.toString(),
+    },
+  };
+}
+
+async function proxyDynamicRedirect(publicIssuer: string, path: string, request: HttpRequest) {
+  const url = new URL(`${publicIssuer}${path}`);
+  for (const [key, value] of Object.entries(request.query)) {
+    if (typeof value === 'string') {
+      url.searchParams.set(key, value);
+    }
+  }
+
+  return {
+    statusCode: 302,
+    headers: {
+      location: url.toString(),
+    },
+    body: {
+      redirect: url.toString(),
+    },
+  };
+}
+
+function toForwardHeaders(headers: Record<string, string | undefined>): Record<string, string> {
+  const forwarded: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'string' && value.length > 0) {
+      forwarded[key] = value;
+    }
+  }
+  return forwarded;
 }
 
 async function serveIndex(clientRootDir: string) {
@@ -164,11 +257,42 @@ async function serveAsset(clientRootDir: string, path: string) {
   }
 }
 
-async function fetchJson<T>(url: string, fetchImpl: typeof fetch): Promise<{ status: number; body: T }> {
-  const response = await fetchImpl(url);
+async function fetchJson<T>(
+  url: string,
+  fetchImpl: typeof fetch,
+  headers?: Record<string, string>,
+): Promise<{ status: number; body: T }> {
+  const response = await fetchImpl(url, headers ? { headers } : undefined);
   return {
     status: response.status,
     body: (await response.json()) as T,
+  };
+}
+
+function emptyAdminOverview(): AdminOverviewPayload {
+  return {
+    products: [],
+    workspaces: [],
+    users: [],
+    clients: [],
+    routePolicies: [],
+    roles: [],
+    assignments: [],
+    sessions: [],
+    signingKeys: [],
+    auditEvents: [],
+    counts: {
+      products: 0,
+      workspaces: 0,
+      users: 0,
+      clients: 0,
+      routePolicies: 0,
+      roles: 0,
+      assignments: 0,
+      sessions: 0,
+      signingKeys: 0,
+      auditEvents: 0,
+    },
   };
 }
 
@@ -178,6 +302,22 @@ async function readResponseBody(response: Response): Promise<unknown> {
     return response.json();
   }
   return response.text();
+}
+
+function readForwardResponseHeaders(response: Response): Record<string, string> | undefined {
+  const headers: Record<string, string> = {};
+  const contentType = response.headers.get('content-type');
+  const setCookie = response.headers.get('set-cookie');
+
+  if (contentType) {
+    headers['content-type'] = contentType;
+  }
+
+  if (setCookie) {
+    headers['set-cookie'] = setCookie;
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 async function readText(path: string): Promise<string> {

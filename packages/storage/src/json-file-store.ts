@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
@@ -63,7 +64,7 @@ export class JsonFileStore<T extends object> {
     const directory = dirname(target);
     await mkdir(directory, { recursive: true });
 
-    const tempPath = `${target}.${process.pid}.tmp`;
+    const tempPath = `${target}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tempPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
     await rename(tempPath, target);
   }

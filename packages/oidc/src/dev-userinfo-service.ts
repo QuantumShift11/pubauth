@@ -10,9 +10,19 @@ export class DevUserInfoService implements UserInfoService {
 
   async getUserInfo(request: UserInfoRequest): Promise<UserInfoResponse> {
     if (this.jwtSigner) {
-      const verified = this.jwtSigner.verify(request.accessToken, { issuer: this.jwtSigner.issuer });
-      if (verified.payload.token_use !== 'access_token') {
-        throw new Error('invalid_token_use');
+      const verified = this.jwtSigner.verify(request.accessToken, {
+        issuer: this.jwtSigner.issuer,
+        tokenUse: 'access_token',
+      });
+
+      const clientId = typeof verified.payload.client_id === 'string' ? verified.payload.client_id : null;
+      if (!clientId) {
+        throw new Error('invalid_token_audience');
+      }
+
+      const audience = Array.isArray(verified.payload.aud) ? verified.payload.aud : [verified.payload.aud];
+      if (!audience.includes(clientId)) {
+        throw new Error('invalid_token_audience');
       }
 
       return {
@@ -21,10 +31,10 @@ export class DevUserInfoService implements UserInfoService {
         roles: normalizeList(verified.payload.roles),
         groups: normalizeList(verified.payload.groups),
         claims: {
-          client_id: verified.payload.aud,
+          client_id: clientId,
           scope: verified.payload.scope,
           workspace_id: verified.payload.workspace_id,
-          token_use: verified.payload.token_use,
+          token_use: 'access_token',
         },
       };
     }

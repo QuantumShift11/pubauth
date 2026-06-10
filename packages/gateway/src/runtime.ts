@@ -1,7 +1,15 @@
 import { resolve } from 'node:path';
-import { RsaJwtSigner } from '../../crypto/src/index.js';
 import type { Route, HttpRequest, HttpResponse } from '../../http/src/index.js';
-import { JsonFileStore, createDefaultPubAuthState, type PubAuthState, type StoredRoutePolicy } from '../../storage/src/index.js';
+import {
+  assertBootstrapAccountPolicy,
+  JsonFileStore,
+  createDefaultPubAuthState,
+  type PubAuthState,
+  type StoredRoutePolicy,
+  FileSigningKeyRepository,
+  readPubAuthEnvironment,
+} from '../../storage/src/index.js';
+import { createSigningKeyService, type SigningKeyService } from '../../oidc/src/index.js';
 import type { GatewayRouteRule } from './policy.js';
 import { authorizeGatewayRequest, forwardGatewayRequest, type GatewayCredentialVerifier } from './proxy.js';
 import type { GatewayPrincipal } from './headers.js';
@@ -14,7 +22,8 @@ export interface GatewayRuntimeOptions {
 
 export async function buildGatewayProxyRoutes(options: GatewayRuntimeOptions): Promise<Route[]> {
   const store = new JsonFileStore<PubAuthState>(resolve(options.dataDir, 'state.json'), createDefaultPubAuthState());
-  const signer = await loadOrCreateSigner(store, options.issuer);
+  assertBootstrapAccountPolicy(await store.read(), readPubAuthEnvironment());
+  const signer = await createSigningKeyService(new FileSigningKeyRepository(store), options.issuer);
   const fetchImpl = options.fetchImpl ?? fetch;
 
   return [
@@ -54,7 +63,7 @@ export async function buildGatewayProxyRoutes(options: GatewayRuntimeOptions): P
 async function handleGatewayRequest(
   request: HttpRequest,
   store: JsonFileStore<PubAuthState>,
-  signer: RsaJwtSigner,
+  signer: SigningKeyService,
   fetchImpl: typeof fetch,
 ): Promise<HttpResponse> {
   if (request.path.startsWith('/_pubauth/')) {
@@ -114,13 +123,15 @@ function buildRouteRules(routePolicies: StoredRoutePolicy[]): GatewayRouteRule[]
 
 function createCredentialVerifier(
   store: JsonFileStore<PubAuthState>,
-  signer: RsaJwtSigner,
+  signer: SigningKeyService,
 ): GatewayCredentialVerifier {
   return {
     async verifyBearer(token: string): Promise<GatewayPrincipal | null> {
       try {
-        const verified = signer.verify(token, { issuer: signer.issuer });
-        if (verified.payload.token_use !== 'access_token') {
+        const verified = signer.verify(token, { issuer: signer.issuer, tokenUse: 'access_token' });
+        const clientId = readStringClaim(verified.payload.client_id);
+        const audience = Array.isArray(verified.payload.aud) ? verified.payload.aud : [verified.payload.aud];
+        if (!clientId || !audience.includes(clientId)) {
           return null;
         }
 
@@ -181,32 +192,4 @@ function readClaimList(value: unknown): string[] | null {
   }
 
   return null;
-}
-
-async function loadOrCreateSigner(stateStore: JsonFileStore<PubAuthState>, issuer: string): Promise<RsaJwtSigner> {
-  const now = new Date().toISOString();
-  const state = await stateStore.update((current) => {
-    if (current.signingKeys.length > 0) {
-      return current;
-    }
-
-    const generated = RsaJwtSigner.generateWithMaterial(issuer);
-    current.signingKeys.push({
-      keyId: generated.signer.keyId,
-      algorithm: 'RS256',
-      publicKeyPem: generated.publicKeyPem,
-      privateKeyPem: generated.privateKeyPem,
-      status: 'active',
-      createdAt: now,
-    });
-    return current;
-  });
-
-  const activeKey = state.signingKeys.find((item) => item.status === 'active') ?? state.signingKeys[0];
-  if (!activeKey) {
-    const generated = RsaJwtSigner.generateWithMaterial(issuer);
-    return generated.signer;
-  }
-
-  return RsaJwtSigner.fromPem(issuer, activeKey.keyId, activeKey.privateKeyPem, activeKey.publicKeyPem);
 }

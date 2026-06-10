@@ -2,9 +2,11 @@ export interface AdminCommandResult {
   ok: boolean;
   id?: string;
   message: string;
+  clientSecret?: string;
 }
 
 export interface ProductAdminCommand {
+  workspaceId: string;
   name: string;
   slug: string;
   environment: 'local' | 'dev' | 'qa' | 'prod';
@@ -34,4 +36,5 @@ export interface AssignmentAdminCommand {
   userId: string;
   role: string;
   workspaceId?: string;
+  productId?: string;
 }

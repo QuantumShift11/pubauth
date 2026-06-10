@@ -15,6 +15,8 @@ export class FileOidcClientRepository implements OidcClientRepository {
       ? {
           clientId: client.clientId,
           clientType: client.clientType,
+          tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
+          clientSecretHash: client.clientSecretHash,
           allowedRedirectUris: client.allowedRedirectUris,
           allowedScopes: client.allowedScopes,
           isActive: client.isActive,
@@ -28,8 +30,11 @@ export class FileOidcClientRepository implements OidcClientRepository {
       next.push({
         id: `client-${client.clientId}`,
         productId: 'product-atlas',
+        workspaceId: 'workspace-core-platform',
         clientId: client.clientId,
         clientType: client.clientType,
+        tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
+        clientSecretHash: client.clientSecretHash,
         allowedRedirectUris: [...client.allowedRedirectUris],
         logoutRedirectUris: [],
         allowedScopes: [...client.allowedScopes],
@@ -129,8 +134,11 @@ export function createDefaultClientRegistration(clientId: string) {
   return {
     id: randomUUID(),
     productId: 'product-atlas',
+    workspaceId: 'workspace-core-platform',
     clientId,
     clientType: 'public' as const,
+    tokenEndpointAuthMethod: 'none' as const,
+    clientSecretHash: undefined,
     allowedRedirectUris: [],
     logoutRedirectUris: [],
     allowedScopes: ['openid'],

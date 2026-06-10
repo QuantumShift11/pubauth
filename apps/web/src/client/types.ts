@@ -10,6 +10,8 @@ export type {
   BootstrapRole,
   BootstrapSession,
   BootstrapSigningKey,
+  BootstrapUserAccount,
   BootstrapWorkspace,
   OidcDiscoveryDocument,
+  SelfServiceOverview,
 } from '../bootstrap-types.js';

@@ -1,5 +1,29 @@
 import { randomUUID } from 'node:crypto';
-import type { JsonFileStore, PubAuthState } from '../../storage/src/index.js';
+import { randomToken, sha256Hex } from '../../crypto/src/index.js';
+import type {
+  AssignmentRepository,
+  AuditRepository,
+  ClientRepository,
+  ProductRepository,
+  RoleRepository,
+  RoutePolicyRepository,
+  SessionRepository,
+  SigningKeyRepository,
+  UserRepository,
+  WorkspaceRepository,
+} from '../../storage/src/index.js';
+import type {
+  StoredAssignment,
+  StoredAuditEvent,
+  StoredAuthSession,
+  StoredOidcClient,
+  StoredProduct,
+  StoredRole,
+  StoredRoutePolicy,
+  StoredSigningKey,
+  StoredUserAccount,
+  StoredWorkspace,
+} from '../../storage/src/pubauth-state.js';
 import type {
   AdminCatalogService,
   AdminCommandResult,
@@ -24,20 +48,17 @@ function makeId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
-function addAuditEvent(state: PubAuthState, event: {
-  actor: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  outcome: 'success' | 'failure';
-  description: string;
-  workspaceId?: string;
-}) {
-  state.auditEvents.push({
-    id: makeId('audit'),
-    createdAt: new Date().toISOString(),
-    ...event,
-  });
+export interface AdminRepositoryBundle {
+  products: ProductRepository<StoredProduct>;
+  workspaces: WorkspaceRepository<StoredWorkspace>;
+  users: UserRepository<StoredUserAccount>;
+  clients: ClientRepository<StoredOidcClient>;
+  routePolicies: RoutePolicyRepository<StoredRoutePolicy>;
+  roles: RoleRepository<StoredRole>;
+  assignments: AssignmentRepository<StoredAssignment>;
+  sessions: SessionRepository<StoredAuthSession>;
+  signingKeys: SigningKeyRepository<StoredSigningKey>;
+  audit: AuditRepository<StoredAuditEvent>;
 }
 
 export class FileAdminService
@@ -50,303 +71,287 @@ export class FileAdminService
     AssignmentAdminService,
     AdminCatalogService
 {
-  constructor(private readonly store: JsonFileStore<PubAuthState>) {}
+  constructor(private readonly repositories: AdminRepositoryBundle) {}
 
-  async createProduct(command: { name: string; slug: string; environment: 'local' | 'dev' | 'qa' | 'prod' }): Promise<AdminCommandResult> {
+  async createProduct(command: { workspaceId: string; name: string; slug: string; environment: 'local' | 'dev' | 'qa' | 'prod' }): Promise<AdminCommandResult> {
     const slug = normalizeSlug(command.slug);
-    const now = new Date().toISOString();
     const id = `product-${slug || makeId('product')}`;
 
-    const result = await this.store.update((state) => {
-      if (state.products.some((item) => item.slug === slug)) {
-        addAuditEvent(state, {
-          actor: 'system',
-          action: 'create_product',
-          entityType: 'product',
-          entityId: id,
-          outcome: 'failure',
-          description: `Product slug ${slug} already exists`,
-        });
-        return state;
-      }
+    if (!(await this.repositories.workspaces.list()).some((item) => item.id === command.workspaceId)) {
+      return { ok: false, id: command.workspaceId, message: 'workspace_missing' };
+    }
 
-      state.products.push({
-        id,
-        name: command.name,
-        slug,
-        environment: command.environment,
-        status: 'active',
-        createdAt: now,
-      });
-      addAuditEvent(state, {
+    if (await this.repositories.products.findBySlug(slug)) {
+      await this.appendAudit({
         actor: 'system',
         action: 'create_product',
         entityType: 'product',
         entityId: id,
-        outcome: 'success',
-        description: `Created product ${command.name}`,
+        outcome: 'failure',
+        description: `Product slug ${slug} already exists`,
       });
-      return state;
-    });
-
-    const created = result.products.find((item) => item.id === id);
-    if (!created) {
       return { ok: false, id, message: 'product_slug_already_exists' };
     }
+
+    await this.repositories.products.save({
+      id,
+      workspaceId: command.workspaceId,
+      name: command.name,
+      slug,
+      environment: command.environment,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    });
+    await this.appendAudit({
+      actor: 'system',
+      action: 'create_product',
+      entityType: 'product',
+      entityId: id,
+      outcome: 'success',
+      description: `Created product ${command.name}`,
+    });
 
     return { ok: true, id, message: 'product_created' };
   }
 
   async createWorkspace(command: { name: string; slug: string }): Promise<AdminCommandResult> {
     const slug = normalizeSlug(command.slug);
-    const now = new Date().toISOString();
     const id = `workspace-${slug || makeId('workspace')}`;
 
-    const result = await this.store.update((state) => {
-      if (state.workspaces.some((item) => item.slug === slug)) {
-        addAuditEvent(state, {
-          actor: 'system',
-          action: 'create_workspace',
-          entityType: 'workspace',
-          entityId: id,
-          outcome: 'failure',
-          description: `Workspace slug ${slug} already exists`,
-        });
-        return state;
-      }
-
-      state.workspaces.push({
-        id,
-        name: command.name,
-        slug,
-        state: 'active',
-        createdAt: now,
-      });
-      addAuditEvent(state, {
+    if (await this.repositories.workspaces.findBySlug(slug)) {
+      await this.appendAudit({
         actor: 'system',
         action: 'create_workspace',
         entityType: 'workspace',
         entityId: id,
-        outcome: 'success',
-        description: `Created workspace ${command.name}`,
+        outcome: 'failure',
+        description: `Workspace slug ${slug} already exists`,
       });
-      return state;
-    });
-
-    const created = result.workspaces.find((item) => item.id === id);
-    if (!created) {
       return { ok: false, id, message: 'workspace_slug_already_exists' };
     }
+
+    await this.repositories.workspaces.save({
+      id,
+      name: command.name,
+      slug,
+      state: 'active',
+      createdAt: new Date().toISOString(),
+    });
+    await this.appendAudit({
+      actor: 'system',
+      action: 'create_workspace',
+      entityType: 'workspace',
+      entityId: id,
+      outcome: 'success',
+      description: `Created workspace ${command.name}`,
+    });
 
     return { ok: true, id, message: 'workspace_created' };
   }
 
   async createClient(command: { productId: string; clientType: 'public' | 'confidential'; redirectUris: string[]; scopes: string[] }): Promise<AdminCommandResult> {
-    const now = new Date().toISOString();
-    const id = makeId('client');
-    const clientId = `${normalizeSlug(command.productId) || 'client'}-${id.slice(-8)}`;
-
-    const result = await this.store.update((state) => {
-      const productExists = state.products.some((item) => item.id === command.productId);
-      if (!productExists || state.clients.some((item) => item.clientId === clientId)) {
-        addAuditEvent(state, {
-          actor: 'system',
-          action: 'create_client',
-          entityType: 'client',
-          entityId: id,
-          outcome: 'failure',
-          description: `Client creation failed for product ${command.productId}`,
-          workspaceId: command.productId,
-        });
-        return state;
-      }
-
-      state.clients.push({
-        id,
-        productId: command.productId,
-        clientId,
-        clientType: command.clientType,
-        allowedRedirectUris: [...command.redirectUris],
-        logoutRedirectUris: [],
-        allowedScopes: [...new Set(['openid', ...command.scopes])],
-        isActive: true,
-        createdAt: now,
-      });
-      addAuditEvent(state, {
+    const product = await this.repositories.products.findById(command.productId);
+    if (!product) {
+      await this.appendAudit({
         actor: 'system',
         action: 'create_client',
         entityType: 'client',
-        entityId: id,
-        outcome: 'success',
-        description: `Created client ${clientId}`,
+        entityId: command.productId,
+        outcome: 'failure',
+        description: `Client creation failed for product ${command.productId}`,
       });
-      return state;
-    });
-
-    const created = result.clients.find((item) => item.id === id);
-    if (!created) {
       return { ok: false, id: command.productId, message: 'client_product_missing_or_duplicate' };
     }
 
-    return { ok: true, id: created.clientId, message: 'client_created' };
+    const id = makeId('client');
+    const clientId = `${normalizeSlug(command.productId) || 'client'}-${id.slice(-8)}`;
+    const clientSecret = command.clientType === 'confidential' ? randomToken(32) : undefined;
+
+    await this.repositories.clients.save({
+      id,
+      productId: command.productId,
+      workspaceId: product.workspaceId,
+      clientId,
+      clientType: command.clientType,
+      tokenEndpointAuthMethod: command.clientType === 'confidential' ? 'client_secret_basic' : 'none',
+      clientSecretHash: clientSecret ? sha256Hex(clientSecret) : undefined,
+      allowedRedirectUris: [...command.redirectUris],
+      logoutRedirectUris: [],
+      allowedScopes: [...new Set(['openid', ...command.scopes])],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    });
+    await this.appendAudit({
+      actor: 'system',
+      action: 'create_client',
+      entityType: 'client',
+      entityId: id,
+      outcome: 'success',
+      description: `Created client ${clientId}`,
+    });
+
+    return { ok: true, id: clientId, message: 'client_created', clientSecret };
   }
 
   async createRoutePolicy(command: { productId: string; upstreamUrl: string; pathPattern: string; methods: string[]; requiredRoles: string[] }): Promise<AdminCommandResult> {
-    const now = new Date().toISOString();
-    const id = makeId('policy');
-
-    const result = await this.store.update((state) => {
-      if (!state.products.some((item) => item.id === command.productId)) {
-        addAuditEvent(state, {
-          actor: 'system',
-          action: 'create_route_policy',
-          entityType: 'routePolicy',
-          entityId: id,
-          outcome: 'failure',
-          description: `Route policy target product ${command.productId} missing`,
-        });
-        return state;
-      }
-
-      state.routePolicies.push({
-        id,
-        productId: command.productId,
-        upstreamUrl: command.upstreamUrl,
-        pathPattern: command.pathPattern,
-        methods: [...new Set(command.methods.map((method) => method.toUpperCase()))],
-        requiredRoles: [...new Set(command.requiredRoles.map((role) => role.trim()).filter(Boolean))],
-        priority: 100,
-        state: 'active',
-        createdAt: now,
-      });
-      addAuditEvent(state, {
+    const product = await this.repositories.products.findById(command.productId);
+    if (!product) {
+      await this.appendAudit({
         actor: 'system',
         action: 'create_route_policy',
         entityType: 'routePolicy',
-        entityId: id,
-        outcome: 'success',
-        description: `Created route policy for ${command.pathPattern}`,
+        entityId: command.productId,
+        outcome: 'failure',
+        description: `Route policy target product ${command.productId} missing`,
       });
-      return state;
-    });
-
-    const created = result.routePolicies.find((item) => item.id === id);
-    if (!created) {
       return { ok: false, id: command.productId, message: 'route_policy_product_missing' };
     }
+
+    const id = makeId('policy');
+    await this.repositories.routePolicies.save({
+      id,
+      productId: command.productId,
+      upstreamUrl: command.upstreamUrl,
+      pathPattern: command.pathPattern,
+      methods: [...new Set(command.methods.map((method) => method.toUpperCase()))],
+      requiredRoles: [...new Set(command.requiredRoles.map((role) => role.trim()).filter(Boolean))],
+      priority: 100,
+      state: 'active',
+      createdAt: new Date().toISOString(),
+    });
+    await this.appendAudit({
+      actor: 'system',
+      action: 'create_route_policy',
+      entityType: 'routePolicy',
+      entityId: id,
+      outcome: 'success',
+      description: `Created route policy for ${command.pathPattern}`,
+    });
 
     return { ok: true, id, message: 'route_policy_created' };
   }
 
-  async createRole(name: string): Promise<AdminCommandResult> {
+  async createRole(name: string, workspaceId?: string): Promise<AdminCommandResult> {
     const normalized = normalizeSlug(name);
-    const now = new Date().toISOString();
-    const id = `role-${normalized || makeId('role')}`;
+    const workspacePrefix = workspaceId ? `${normalizeSlug(workspaceId)}-` : '';
+    const id = `role-${workspacePrefix}${normalized || makeId('role')}`;
 
-    const result = await this.store.update((state) => {
-      if (state.roles.some((item) => item.name === name)) {
-        addAuditEvent(state, {
-          actor: 'system',
-          action: 'create_role',
-          entityType: 'role',
-          entityId: id,
-          outcome: 'failure',
-          description: `Role ${name} already exists`,
-        });
-        return state;
-      }
-
-      state.roles.push({
-        id,
-        name,
-        createdAt: now,
-      });
-      addAuditEvent(state, {
+    const roles = await this.repositories.roles.list();
+    if (roles.some((role) => role.name === name && role.workspaceId === workspaceId)) {
+      await this.appendAudit({
         actor: 'system',
         action: 'create_role',
         entityType: 'role',
         entityId: id,
-        outcome: 'success',
-        description: `Created role ${name}`,
+        outcome: 'failure',
+        description: `Role ${name} already exists`,
       });
-      return state;
-    });
-
-    const created = result.roles.find((item) => item.id === id);
-    if (!created) {
       return { ok: false, id, message: 'role_already_exists' };
     }
+
+    await this.repositories.roles.save({
+      id,
+      name,
+      workspaceId,
+      createdAt: new Date().toISOString(),
+    });
+    await this.appendAudit({
+      actor: 'system',
+      action: 'create_role',
+      entityType: 'role',
+      entityId: id,
+      outcome: 'success',
+      description: `Created role ${name}`,
+    });
 
     return { ok: true, id, message: 'role_created' };
   }
 
   async assignRole(command: AssignmentAdminCommand): Promise<AdminCommandResult> {
-    const now = new Date().toISOString();
-    const id = makeId('assignment');
-
-    const result = await this.store.update((state) => {
-      if (!state.roles.some((item) => item.name === command.role)) {
-        addAuditEvent(state, {
-          actor: 'system',
-          action: 'assign_role',
-          entityType: 'assignment',
-          entityId: id,
-          outcome: 'failure',
-          description: `Role ${command.role} missing`,
-        });
-        return state;
-      }
-
-      state.assignments.push({
-        id,
-        userId: command.userId,
-        role: command.role,
-        workspaceId: command.workspaceId,
-        createdAt: now,
-      });
-      addAuditEvent(state, {
+    const roles = await this.repositories.roles.list();
+    const role = roles.find((item) => item.name === command.role && item.workspaceId === command.workspaceId) ??
+      roles.find((item) => item.name === command.role && !item.workspaceId) ??
+      null;
+    if (!role) {
+      const id = makeId('assignment');
+      await this.appendAudit({
         actor: 'system',
         action: 'assign_role',
         entityType: 'assignment',
         entityId: id,
-        outcome: 'success',
-        description: `Assigned ${command.role} to ${command.userId}`,
-        workspaceId: command.workspaceId,
+        outcome: 'failure',
+        description: `Role ${command.role} missing`,
       });
-      return state;
-    });
-
-    const created = result.assignments.find((item) => item.id === id);
-    if (!created) {
       return { ok: false, id, message: 'role_missing' };
     }
+
+    const id = makeId('assignment');
+    await this.repositories.assignments.save({
+      id,
+      userId: command.userId,
+      role: command.role,
+      workspaceId: command.workspaceId,
+      productId: command.productId,
+      createdAt: new Date().toISOString(),
+    });
+    await this.appendAudit({
+      actor: 'system',
+      action: 'assign_role',
+      entityType: 'assignment',
+      entityId: id,
+      outcome: 'success',
+      description: `Assigned ${command.role} to ${command.userId}`,
+      workspaceId: command.workspaceId,
+    });
 
     return { ok: true, id, message: 'assignment_created' };
   }
 
   async getOverview() {
-    const state = await this.store.read();
+    const [products, workspaces, users, clients, routePolicies, roles, assignments, sessions, signingKeys, auditEvents] = await Promise.all([
+      this.repositories.products.list(),
+      this.repositories.workspaces.list(),
+      this.repositories.users.list(),
+      this.repositories.clients.list(),
+      this.repositories.routePolicies.list(),
+      this.repositories.roles.list(),
+      this.repositories.assignments.list(),
+      this.repositories.sessions.list(),
+      this.repositories.signingKeys.listPublicKeys(),
+      this.repositories.audit.listRecent(50),
+    ]);
+
     return {
-      products: state.products,
-      workspaces: state.workspaces,
-      clients: state.clients,
-      routePolicies: state.routePolicies,
-      roles: state.roles,
-      assignments: state.assignments,
-      sessions: state.sessions,
-      signingKeys: state.signingKeys.map(({ privateKeyPem: _privateKeyPem, ...publicKey }) => publicKey),
-      auditEvents: state.auditEvents.slice(-50).reverse(),
+      products,
+      workspaces,
+      users: users.map(({ passwordHash: _passwordHash, ...user }) => user),
+      clients,
+      routePolicies,
+      roles,
+      assignments,
+      sessions,
+      signingKeys: signingKeys.map(({ privateKeyPem: _privateKeyPem, ...publicKey }) => publicKey),
+      auditEvents,
       counts: {
-        products: state.products.length,
-        workspaces: state.workspaces.length,
-        clients: state.clients.length,
-        routePolicies: state.routePolicies.length,
-        roles: state.roles.length,
-        assignments: state.assignments.length,
-        sessions: state.sessions.length,
-        signingKeys: state.signingKeys.length,
-        auditEvents: state.auditEvents.length,
+        products: products.length,
+        workspaces: workspaces.length,
+        users: users.length,
+        clients: clients.length,
+        routePolicies: routePolicies.length,
+        roles: roles.length,
+        assignments: assignments.length,
+        sessions: sessions.length,
+        signingKeys: signingKeys.length,
+        auditEvents: auditEvents.length,
       },
     };
+  }
+
+  private async appendAudit(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<void> {
+    await this.repositories.audit.append({
+      id: makeId('audit'),
+      createdAt: new Date().toISOString(),
+      ...event,
+    });
   }
 }

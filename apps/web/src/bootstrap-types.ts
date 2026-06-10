@@ -9,6 +9,7 @@ export interface OidcDiscoveryDocument {
 
 export interface BootstrapProduct {
   id: string;
+  workspaceId: string;
   name: string;
   slug: string;
   environment: 'local' | 'dev' | 'qa' | 'prod';
@@ -27,6 +28,7 @@ export interface BootstrapWorkspace {
 export interface BootstrapClient {
   id: string;
   productId: string;
+  workspaceId: string;
   clientId: string;
   clientType: 'confidential' | 'public';
   allowedRedirectUris: string[];
@@ -34,6 +36,19 @@ export interface BootstrapClient {
   allowedScopes: string[];
   isActive: boolean;
   createdAt: string;
+}
+
+export interface BootstrapUserAccount {
+  id: string;
+  subjectId: string;
+  username: string;
+  email: string;
+  displayName: string;
+  workspaceId: string;
+  authProvider: 'local' | 'google' | 'entra';
+  status: 'active' | 'disabled';
+  createdAt: string;
+  lastLoginAt?: string;
 }
 
 export interface BootstrapRoutePolicy {
@@ -51,6 +66,7 @@ export interface BootstrapRoutePolicy {
 export interface BootstrapRole {
   id: string;
   name: string;
+  workspaceId?: string;
   createdAt: string;
 }
 
@@ -59,6 +75,7 @@ export interface BootstrapAssignment {
   userId: string;
   role: string;
   workspaceId?: string;
+  productId?: string;
   createdAt: string;
 }
 
@@ -94,6 +111,7 @@ export interface BootstrapAuditEvent {
 export interface BootstrapAdminPayload {
   products: BootstrapProduct[];
   workspaces: BootstrapWorkspace[];
+  users: BootstrapUserAccount[];
   clients: BootstrapClient[];
   routePolicies: BootstrapRoutePolicy[];
   roles: BootstrapRole[];
@@ -102,6 +120,19 @@ export interface BootstrapAdminPayload {
   signingKeys: BootstrapSigningKey[];
   auditEvents: BootstrapAuditEvent[];
   counts: Record<string, number>;
+}
+
+export interface SelfServiceOverview {
+  user: {
+    subjectId: string;
+    username: string;
+    displayName: string;
+    email: string;
+    workspaceId: string;
+    roles: string[];
+  };
+  sessions: BootstrapSession[];
+  recentAuditEvents: BootstrapAuditEvent[];
 }
 
 export interface BootstrapPayload {

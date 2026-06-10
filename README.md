@@ -96,6 +96,30 @@ Docker Compose:
 docker compose up --build
 ```
 
+Storage integration services:
+
+```bash
+docker compose -f docker-compose.integration.yml up -d
+PUBAUTH_TEST_MONGO_URI=mongodb://127.0.0.1:27018 \
+PUBAUTH_TEST_REDIS_URL=redis://127.0.0.1:6380 \
+npm run test:integration
+```
+
+Local bootstrap accounts are seeded only when `PUBAUTH_ENV=local`. In `dev`, `qa`, and `prod`, bootstrap local accounts are not seeded, any persisted bootstrap account causes startup failure, and `PUBAUTH_ENABLE_BOOTSTRAP_ACCOUNTS=true` is rejected at startup.
+
+Google and Entra broker flows are configured only through environment variables:
+
+```bash
+PUBAUTH_GOOGLE_OIDC_ISSUER=...
+PUBAUTH_GOOGLE_CLIENT_ID=...
+PUBAUTH_GOOGLE_CLIENT_SECRET=...
+PUBAUTH_GOOGLE_REDIRECT_URI=...
+PUBAUTH_ENTRA_OIDC_ISSUER=...
+PUBAUTH_ENTRA_CLIENT_ID=...
+PUBAUTH_ENTRA_CLIENT_SECRET=...
+PUBAUTH_ENTRA_REDIRECT_URI=...
+```
+
 ## Current status
 
-This repo now includes a React control-plane UI, signed RS256 OIDC issuance, JWKS exposure, and persisted admin state backed by a Docker volume. Provider adapters and some lower-level storage adapters remain scaffolding for future expansion.
+This repo includes a React control-plane UI, signed RS256 OIDC issuance, JWKS exposure, session-backed admin APIs, tenant-scoped admin authorization, and broker flows for Google and Entra wired through provider discovery, token exchange, JWKS-backed ID token verification, state, nonce, and account linking. Mongo and Redis adapters have runnable integration tests when the Docker-backed services above are available.

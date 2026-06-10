@@ -1,6 +1,6 @@
 import {
-  createPrivateKey,
   createPublicKey,
+  createPrivateKey,
   createSign,
   createVerify,
   generateKeyPairSync,
@@ -17,6 +17,12 @@ export interface PublicJsonWebKey {
   e?: string;
 }
 
+export interface PublicRsaJsonWebKey extends PublicJsonWebKey {
+  kty: 'RSA';
+  n: string;
+  e: string;
+}
+
 export interface JwtSignOptions {
   audience: string;
   subject: string;
@@ -28,6 +34,8 @@ export interface JwtVerifyOptions {
   audience?: string;
   issuer?: string;
   now?: Date;
+  requireTyp?: string;
+  tokenUse?: string | string[];
 }
 
 export interface VerifiedJwt {
@@ -78,6 +86,10 @@ export class RsaJwtSigner implements JwtSigner {
     return new RsaJwtSigner(keyId, issuer, privateKeyPem, publicKeyPem);
   }
 
+  static fromPublicPem(issuer: string, keyId: string, publicKeyPem: string): RsaJwtSigner {
+    return new RsaJwtSigner(keyId, issuer, publicKeyPem, publicKeyPem);
+  }
+
   sign(options: JwtSignOptions): string {
     const now = Math.floor(Date.now() / 1000);
     const header = {
@@ -108,6 +120,20 @@ export class RsaJwtSigner implements JwtSigner {
       throw new Error('invalid_token_format');
     }
 
+    const header = parseBase64UrlJson(encodedHeader);
+    if (header.alg !== 'RS256') {
+      throw new Error('invalid_token_algorithm');
+    }
+
+    const expectedTyp = options.requireTyp ?? 'JWT';
+    if (expectedTyp && header.typ !== expectedTyp) {
+      throw new Error('invalid_token_type');
+    }
+
+    if (typeof header.kid !== 'string' || header.kid !== this.keyId) {
+      throw new Error('invalid_token_key');
+    }
+
     const signingInput = `${encodedHeader}.${encodedPayload}`;
     const signature = Buffer.from(toBase64(encodedSignature), 'base64');
     const valid = createVerify('RSA-SHA256').update(signingInput).verify(this.publicKeyObject, signature);
@@ -116,32 +142,8 @@ export class RsaJwtSigner implements JwtSigner {
       throw new Error('invalid_token_signature');
     }
 
-    const header = parseBase64UrlJson(encodedHeader);
     const payload = parseBase64UrlJson(encodedPayload);
-    const now = Math.floor((options.now ?? new Date()).getTime() / 1000);
-
-    if (header.alg !== 'RS256') {
-      throw new Error('invalid_token_algorithm');
-    }
-
-    if (header.kid !== this.keyId) {
-      throw new Error('invalid_token_key');
-    }
-
-    if (payload.exp && typeof payload.exp === 'number' && payload.exp <= now) {
-      throw new Error('token_expired');
-    }
-
-    if (options.issuer && payload.iss !== options.issuer) {
-      throw new Error('invalid_issuer');
-    }
-
-    if (options.audience && payload.aud !== options.audience) {
-      const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-      if (!audience.includes(options.audience)) {
-        throw new Error('invalid_audience');
-      }
-    }
+    validateJwtPayload(payload, options);
 
     return { header, payload };
   }
@@ -177,4 +179,64 @@ function parseBase64UrlJson(value: string): Record<string, unknown> {
 
 function toBase64(value: string): string {
   return value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+}
+
+export function verifyJwtWithJwk(token: string, jwk: PublicRsaJsonWebKey, options: JwtVerifyOptions = {}): VerifiedJwt {
+  const [encodedHeader, encodedPayload, encodedSignature] = token.split('.');
+  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+    throw new Error('invalid_token_format');
+  }
+
+  const header = parseBase64UrlJson(encodedHeader);
+  if (header.alg !== 'RS256') {
+    throw new Error('invalid_token_algorithm');
+  }
+
+  const expectedTyp = options.requireTyp ?? 'JWT';
+  if (expectedTyp && header.typ !== expectedTyp) {
+    throw new Error('invalid_token_type');
+  }
+
+  if (typeof header.kid !== 'string' || header.kid !== jwk.kid) {
+    throw new Error('invalid_token_key');
+  }
+
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = Buffer.from(toBase64(encodedSignature), 'base64');
+  const valid = createVerify('RSA-SHA256')
+    .update(signingInput)
+    .verify(createPublicKey({ key: jwk as any, format: 'jwk' } as any), signature);
+  if (!valid) {
+    throw new Error('invalid_token_signature');
+  }
+
+  const payload = parseBase64UrlJson(encodedPayload);
+  validateJwtPayload(payload, options);
+  return { header, payload };
+}
+
+function validateJwtPayload(payload: Record<string, unknown>, options: JwtVerifyOptions = {}): void {
+  const now = Math.floor((options.now ?? new Date()).getTime() / 1000);
+
+  if (payload.exp && typeof payload.exp === 'number' && payload.exp <= now) {
+    throw new Error('token_expired');
+  }
+
+  if (options.issuer && payload.iss !== options.issuer) {
+    throw new Error('invalid_issuer');
+  }
+
+  if (options.audience && payload.aud !== options.audience) {
+    const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+    if (!audience.includes(options.audience)) {
+      throw new Error('invalid_audience');
+    }
+  }
+
+  if (options.tokenUse) {
+    const tokenUseValues = Array.isArray(options.tokenUse) ? options.tokenUse : [options.tokenUse];
+    if (!tokenUseValues.includes(String(payload.token_use ?? ''))) {
+      throw new Error('invalid_token_use');
+    }
+  }
 }

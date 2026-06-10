@@ -2,19 +2,19 @@
 
 :root {
   color-scheme: dark;
-  --bg: #07111f;
-  --bg-soft: rgba(12, 20, 35, 0.72);
-  --panel: rgba(14, 24, 42, 0.86);
-  --panel-strong: rgba(19, 31, 52, 0.94);
-  --line: rgba(176, 203, 255, 0.14);
-  --line-strong: rgba(176, 203, 255, 0.24);
+  --bg: #050b16;
+  --bg-soft: rgba(9, 15, 28, 0.7);
+  --panel: rgba(12, 20, 36, 0.76);
+  --panel-strong: rgba(17, 26, 46, 0.92);
+  --line: rgba(176, 203, 255, 0.12);
+  --line-strong: rgba(176, 203, 255, 0.2);
   --text: #edf3ff;
   --muted: #99a6bd;
   --accent: #8ce6d2;
   --accent-strong: #67f0b9;
   --accent-warm: #ffbd73;
   --danger: #ff7b8a;
-  --shadow: 0 30px 80px rgba(0, 0, 0, 0.38);
+  --shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
 }
 
 * {
@@ -31,10 +31,27 @@ body {
   margin: 0;
   font-family: 'Manrope', sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(103, 240, 185, 0.14), transparent 28%),
-    radial-gradient(circle at 80% 10%, rgba(255, 189, 115, 0.12), transparent 24%),
-    linear-gradient(160deg, #050b14 0%, #09111f 45%, #07111f 100%);
+    radial-gradient(circle at top left, rgba(103, 240, 185, 0.16), transparent 24%),
+    radial-gradient(circle at 80% 10%, rgba(255, 189, 115, 0.12), transparent 20%),
+    radial-gradient(circle at 50% 0%, rgba(108, 161, 255, 0.12), transparent 30%),
+    linear-gradient(160deg, #040814 0%, #07101d 42%, #050b16 100%);
   color: var(--text);
+  position: relative;
+  isolation: isolate;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 88px 88px;
+  mask-image: radial-gradient(circle at center, black 48%, transparent 100%);
+  opacity: 0.18;
+  z-index: -1;
 }
 
 button,
@@ -106,13 +123,13 @@ p {
 .auth-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
-  gap: 18px;
-  padding: 18px;
+  grid-template-columns: minmax(0, 1.06fr) minmax(320px, 0.94fr);
+  gap: 16px;
+  padding: 16px;
 }
 
 .auth-panel {
-  padding: 28px;
+  padding: 24px;
   display: grid;
   gap: 18px;
   align-content: start;
@@ -132,6 +149,116 @@ p {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.advanced-login {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.advanced-login summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.advanced-login summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-login-body {
+  display: grid;
+  gap: 10px;
+}
+
+.help-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.login-path-grid,
+.guide-grid,
+.guide-reference-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.login-path-grid,
+.guide-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.guide-reference-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.path-card,
+.guide-track,
+.guide-reference {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.path-card-head,
+.guide-track-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.path-copy {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.guide-steps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  line-height: 1.6;
+  display: grid;
+  gap: 8px;
+}
+
+.guide-steps.compact {
+  gap: 6px;
+}
+
+.guide-field-list {
+  display: grid;
+  gap: 12px;
+}
+
+.guide-field-list div {
+  display: grid;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.guide-field-list dt {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.guide-field-list dd {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .login-meta {
@@ -163,8 +290,8 @@ p {
 
 .panel {
   border: 1px solid var(--line);
-  border-radius: 28px;
-  background: linear-gradient(180deg, var(--panel), rgba(10, 18, 31, 0.72));
+  border-radius: 24px;
+  background: linear-gradient(180deg, var(--panel), rgba(8, 14, 24, 0.76));
   box-shadow: var(--shadow);
   backdrop-filter: blur(24px);
 }
@@ -173,7 +300,7 @@ p {
   position: sticky;
   top: 18px;
   align-self: start;
-  padding: 22px;
+  padding: 20px;
   max-height: calc(100vh - 36px);
   overflow: auto;
 }
@@ -207,8 +334,8 @@ p {
 }
 
 .sidebar-section {
-  margin-top: 18px;
-  padding-top: 18px;
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -326,7 +453,7 @@ p {
   grid-template-columns: auto minmax(280px, 1fr) auto;
   gap: 16px;
   align-items: center;
-  padding: 16px 18px;
+  padding: 14px 16px;
 }
 
 .topbar-left,
@@ -364,7 +491,7 @@ p {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
   gap: 24px;
-  padding: 28px;
+  padding: 24px;
 }
 
 .lede {
@@ -383,9 +510,9 @@ p {
 }
 
 .metric {
-  padding: 16px 18px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 15px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -443,7 +570,7 @@ p {
 
 .section-panel,
 .mini-card {
-  padding: 24px;
+  padding: 22px;
 }
 
 .mini-card {
@@ -478,8 +605,8 @@ p {
 }
 
 .stat-card {
-  padding: 16px 18px;
-  border-radius: 22px;
+  padding: 15px 16px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -515,6 +642,14 @@ p {
 
 .feature-list.compact li + li {
   margin-top: 6px;
+}
+
+@media (max-width: 1100px) {
+  .login-path-grid,
+  .guide-grid,
+  .guide-reference-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .table-wrap {
@@ -640,8 +775,8 @@ p {
 .timeline-item,
 .response-item,
 .empty-state {
-  padding: 16px;
-  border-radius: 18px;
+  padding: 15px 16px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
@@ -854,6 +989,107 @@ p {
   margin-top: 0;
 }
 
+.login-inline-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+}
+
+.login-inline-guide span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.login-inline-guide .ghost-button.compact {
+  margin-left: auto;
+}
+
+.launch-card,
+.help-card {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.launch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.launch-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+}
+
+.help-modal {
+  position: fixed;
+  inset: 6% auto auto 50%;
+  transform: translateX(-50%);
+  width: min(1040px, calc(100vw - 32px));
+  max-height: 84vh;
+  z-index: 7;
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  overflow: auto;
+}
+
+.help-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.help-lede {
+  margin-top: 8px;
+  max-width: 64ch;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.help-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.help-modal-grid-small {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.help-card {
+  padding: 18px;
+}
+
+.help-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.help-card .guide-actions,
+.launch-card .guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 @keyframes shimmer {
   from {
     background-position: 0 0;
@@ -886,6 +1122,13 @@ p {
 
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .help-modal,
+  .login-inline-guide,
+  .help-modal-grid,
+  .help-modal-grid-small {
+    grid-template-columns: 1fr;
   }
 }
 

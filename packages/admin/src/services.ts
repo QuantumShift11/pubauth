@@ -16,6 +16,7 @@ import type {
   StoredAuthSession,
   StoredRole,
   StoredSigningKey,
+  StoredUserAccount,
   StoredWorkspace,
 } from '../../storage/src/index.js';
 
@@ -36,7 +37,7 @@ export interface RoutePolicyAdminService {
 }
 
 export interface RoleAdminService {
-  createRole(name: string): Promise<AdminCommandResult>;
+  createRole(name: string, workspaceId?: string): Promise<AdminCommandResult>;
 }
 
 export interface AssignmentAdminService {
@@ -46,6 +47,7 @@ export interface AssignmentAdminService {
 export interface AdminOverview {
   products: StoredProduct[];
   workspaces: StoredWorkspace[];
+  users: Array<Omit<StoredUserAccount, 'passwordHash'>>;
   clients: StoredOidcClient[];
   routePolicies: StoredRoutePolicy[];
   roles: StoredRole[];
@@ -56,6 +58,7 @@ export interface AdminOverview {
   counts: {
     products: number;
     workspaces: number;
+    users: number;
     clients: number;
     routePolicies: number;
     roles: number;
@@ -95,7 +98,7 @@ export class NotImplementedAdminService
     return { ok: false, message: 'route_policy_persistence_not_ready' };
   }
 
-  async createRole(_name: string): Promise<AdminCommandResult> {
+  async createRole(_name: string, _workspaceId?: string): Promise<AdminCommandResult> {
     return { ok: false, message: 'role_persistence_not_ready' };
   }
 

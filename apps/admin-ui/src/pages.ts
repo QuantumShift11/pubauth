@@ -1,0 +1,68 @@
+import type { AdminUiPageDefinition } from './page-contracts.js';
+
+export const adminUiPages: AdminUiPageDefinition[] = [
+  {
+    id: 'dashboard',
+    title: 'Dashboard',
+    path: '/dashboard',
+    summary: 'Operational overview for issuer health, signing keys, sessions, policy decisions, and recent audit events.',
+    widgets: ['runtime-health', 'issuer-jwks', 'recent-auth-events', 'policy-denies', 'quick-actions'],
+    apiDependencies: ['/admin/overview', '/.well-known/openid-configuration', '/oauth2/jwks'],
+  },
+  {
+    id: 'products',
+    title: 'Products',
+    path: '/products',
+    summary: 'Create and manage product registrations, ownership, environment state, and downstream auth posture.',
+    widgets: ['product-table', 'product-drawer', 'product-create-form'],
+    apiDependencies: ['/admin/products', '/admin/overview'],
+  },
+  {
+    id: 'workspaces',
+    title: 'Workspaces',
+    path: '/workspaces',
+    summary: 'Tenant workspaces, scoped ownership, lifecycle state, and workspace-wide access boundaries.',
+    widgets: ['workspace-table', 'workspace-switcher', 'workspace-create-form'],
+    apiDependencies: ['/admin/workspaces', '/admin/overview'],
+  },
+  {
+    id: 'oidc-clients',
+    title: 'OIDC Clients',
+    path: '/oidc-clients',
+    summary: 'Client registrations, redirect URIs, auth method, PKCE posture, and confidential-client secret lifecycle.',
+    widgets: ['client-table', 'client-drawer', 'client-create-form'],
+    apiDependencies: ['/admin/clients', '/admin/overview'],
+  },
+  {
+    id: 'gateway-policies',
+    title: 'Gateway Policies',
+    path: '/gateway-policies',
+    summary: 'Route rules, upstream mapping, deny-by-default controls, and trusted header projection behavior.',
+    widgets: ['policy-table', 'policy-priority-view', 'policy-create-form'],
+    apiDependencies: ['/admin/route-policies', '/admin/overview'],
+  },
+  {
+    id: 'roles-assignments',
+    title: 'Roles & Assignments',
+    path: '/roles-assignments',
+    summary: 'Role catalog, workspace and product scope, principal assignments, and effective access visibility.',
+    widgets: ['role-table', 'assignment-table', 'assignment-create-form'],
+    apiDependencies: ['/admin/roles', '/admin/assignments', '/admin/overview'],
+  },
+  {
+    id: 'audit-logs',
+    title: 'Audit Logs',
+    path: '/audit-logs',
+    summary: 'Immutable operational history for admin changes, auth events, session activity, and broker callbacks.',
+    widgets: ['audit-table', 'audit-filters', 'audit-detail-drawer'],
+    apiDependencies: ['/admin/overview'],
+  },
+  {
+    id: 'provider-setup',
+    title: 'Provider Setup',
+    path: '/provider-setup',
+    summary: 'Google and Entra connection settings, redirect URI guidance, state and nonce validation posture, and broker readiness.',
+    widgets: ['provider-cards', 'redirect-uri-panel', 'broker-readiness-checklist'],
+    apiDependencies: ['/admin/overview'],
+  },
+];

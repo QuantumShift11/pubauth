@@ -17,6 +17,7 @@ test('oidc authorization code flow exchanges a code once using PKCE and supports
     {
       clientId: 'test-client',
       clientType: 'public',
+      tokenEndpointAuthMethod: 'none',
       allowedRedirectUris: ['http://localhost/callback'],
       allowedScopes: ['openid', 'profile'],
       isActive: true,
@@ -25,7 +26,7 @@ test('oidc authorization code flow exchanges a code once using PKCE and supports
 
   const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
   const authorization = new DefaultAuthorizationService(clients, codes);
-  const tokenIssuer = new JwtTokenIssuer(codes, accessTokens);
+  const tokenIssuer = new JwtTokenIssuer(codes, accessTokens, undefined, undefined, clients);
   const userInfo = new JwtUserInfoService(accessTokens);
 
   const authResponse = await authorization.start({
