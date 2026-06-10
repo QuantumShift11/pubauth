@@ -3,6 +3,7 @@ import type { JsonFileStore, PubAuthState } from '../../storage/src/index.js';
 import type {
   AdminCatalogService,
   AdminCommandResult,
+  AssignmentAdminCommand,
   AssignmentAdminService,
   ClientAdminService,
   ProductAdminService,
@@ -21,6 +22,22 @@ function normalizeSlug(value: string): string {
 
 function makeId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
+}
+
+function addAuditEvent(state: PubAuthState, event: {
+  actor: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  outcome: 'success' | 'failure';
+  description: string;
+  workspaceId?: string;
+}) {
+  state.auditEvents.push({
+    id: makeId('audit'),
+    createdAt: new Date().toISOString(),
+    ...event,
+  });
 }
 
 export class FileAdminService
@@ -42,6 +59,14 @@ export class FileAdminService
 
     const result = await this.store.update((state) => {
       if (state.products.some((item) => item.slug === slug)) {
+        addAuditEvent(state, {
+          actor: 'system',
+          action: 'create_product',
+          entityType: 'product',
+          entityId: id,
+          outcome: 'failure',
+          description: `Product slug ${slug} already exists`,
+        });
         return state;
       }
 
@@ -52,6 +77,14 @@ export class FileAdminService
         environment: command.environment,
         status: 'active',
         createdAt: now,
+      });
+      addAuditEvent(state, {
+        actor: 'system',
+        action: 'create_product',
+        entityType: 'product',
+        entityId: id,
+        outcome: 'success',
+        description: `Created product ${command.name}`,
       });
       return state;
     });
@@ -71,6 +104,14 @@ export class FileAdminService
 
     const result = await this.store.update((state) => {
       if (state.workspaces.some((item) => item.slug === slug)) {
+        addAuditEvent(state, {
+          actor: 'system',
+          action: 'create_workspace',
+          entityType: 'workspace',
+          entityId: id,
+          outcome: 'failure',
+          description: `Workspace slug ${slug} already exists`,
+        });
         return state;
       }
 
@@ -80,6 +121,14 @@ export class FileAdminService
         slug,
         state: 'active',
         createdAt: now,
+      });
+      addAuditEvent(state, {
+        actor: 'system',
+        action: 'create_workspace',
+        entityType: 'workspace',
+        entityId: id,
+        outcome: 'success',
+        description: `Created workspace ${command.name}`,
       });
       return state;
     });
@@ -100,6 +149,15 @@ export class FileAdminService
     const result = await this.store.update((state) => {
       const productExists = state.products.some((item) => item.id === command.productId);
       if (!productExists || state.clients.some((item) => item.clientId === clientId)) {
+        addAuditEvent(state, {
+          actor: 'system',
+          action: 'create_client',
+          entityType: 'client',
+          entityId: id,
+          outcome: 'failure',
+          description: `Client creation failed for product ${command.productId}`,
+          workspaceId: command.productId,
+        });
         return state;
       }
 
@@ -113,6 +171,14 @@ export class FileAdminService
         allowedScopes: [...new Set(['openid', ...command.scopes])],
         isActive: true,
         createdAt: now,
+      });
+      addAuditEvent(state, {
+        actor: 'system',
+        action: 'create_client',
+        entityType: 'client',
+        entityId: id,
+        outcome: 'success',
+        description: `Created client ${clientId}`,
       });
       return state;
     });
@@ -131,6 +197,14 @@ export class FileAdminService
 
     const result = await this.store.update((state) => {
       if (!state.products.some((item) => item.id === command.productId)) {
+        addAuditEvent(state, {
+          actor: 'system',
+          action: 'create_route_policy',
+          entityType: 'routePolicy',
+          entityId: id,
+          outcome: 'failure',
+          description: `Route policy target product ${command.productId} missing`,
+        });
         return state;
       }
 
@@ -144,6 +218,14 @@ export class FileAdminService
         priority: 100,
         state: 'active',
         createdAt: now,
+      });
+      addAuditEvent(state, {
+        actor: 'system',
+        action: 'create_route_policy',
+        entityType: 'routePolicy',
+        entityId: id,
+        outcome: 'success',
+        description: `Created route policy for ${command.pathPattern}`,
       });
       return state;
     });
@@ -163,6 +245,14 @@ export class FileAdminService
 
     const result = await this.store.update((state) => {
       if (state.roles.some((item) => item.name === name)) {
+        addAuditEvent(state, {
+          actor: 'system',
+          action: 'create_role',
+          entityType: 'role',
+          entityId: id,
+          outcome: 'failure',
+          description: `Role ${name} already exists`,
+        });
         return state;
       }
 
@@ -170,6 +260,14 @@ export class FileAdminService
         id,
         name,
         createdAt: now,
+      });
+      addAuditEvent(state, {
+        actor: 'system',
+        action: 'create_role',
+        entityType: 'role',
+        entityId: id,
+        outcome: 'success',
+        description: `Created role ${name}`,
       });
       return state;
     });
@@ -182,20 +280,38 @@ export class FileAdminService
     return { ok: true, id, message: 'role_created' };
   }
 
-  async assignRole(userId: string, role: string): Promise<AdminCommandResult> {
+  async assignRole(command: AssignmentAdminCommand): Promise<AdminCommandResult> {
     const now = new Date().toISOString();
     const id = makeId('assignment');
 
     const result = await this.store.update((state) => {
-      if (!state.roles.some((item) => item.name === role)) {
+      if (!state.roles.some((item) => item.name === command.role)) {
+        addAuditEvent(state, {
+          actor: 'system',
+          action: 'assign_role',
+          entityType: 'assignment',
+          entityId: id,
+          outcome: 'failure',
+          description: `Role ${command.role} missing`,
+        });
         return state;
       }
 
       state.assignments.push({
         id,
-        userId,
-        role,
+        userId: command.userId,
+        role: command.role,
+        workspaceId: command.workspaceId,
         createdAt: now,
+      });
+      addAuditEvent(state, {
+        actor: 'system',
+        action: 'assign_role',
+        entityType: 'assignment',
+        entityId: id,
+        outcome: 'success',
+        description: `Assigned ${command.role} to ${command.userId}`,
+        workspaceId: command.workspaceId,
       });
       return state;
     });
@@ -217,6 +333,9 @@ export class FileAdminService
       routePolicies: state.routePolicies,
       roles: state.roles,
       assignments: state.assignments,
+      sessions: state.sessions,
+      signingKeys: state.signingKeys.map(({ privateKeyPem: _privateKeyPem, ...publicKey }) => publicKey),
+      auditEvents: state.auditEvents.slice(-50).reverse(),
       counts: {
         products: state.products.length,
         workspaces: state.workspaces.length,
@@ -224,6 +343,9 @@ export class FileAdminService
         routePolicies: state.routePolicies.length,
         roles: state.roles.length,
         assignments: state.assignments.length,
+        sessions: state.sessions.length,
+        signingKeys: state.signingKeys.length,
+        auditEvents: state.auditEvents.length,
       },
     };
   }

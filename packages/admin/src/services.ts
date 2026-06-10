@@ -1,17 +1,21 @@
 import type {
   AdminCommandResult,
+  AssignmentAdminCommand,
   ClientAdminCommand,
   ProductAdminCommand,
   RoutePolicyAdminCommand,
   WorkspaceAdminCommand,
 } from './contracts.js';
-export type { AdminCommandResult } from './contracts.js';
+export type { AdminCommandResult, AssignmentAdminCommand } from './contracts.js';
 import type {
   StoredAssignment,
+  StoredAuditEvent,
   StoredOidcClient,
   StoredProduct,
   StoredRoutePolicy,
+  StoredAuthSession,
   StoredRole,
+  StoredSigningKey,
   StoredWorkspace,
 } from '../../storage/src/index.js';
 
@@ -36,7 +40,7 @@ export interface RoleAdminService {
 }
 
 export interface AssignmentAdminService {
-  assignRole(userId: string, role: string): Promise<AdminCommandResult>;
+  assignRole(command: AssignmentAdminCommand): Promise<AdminCommandResult>;
 }
 
 export interface AdminOverview {
@@ -46,6 +50,9 @@ export interface AdminOverview {
   routePolicies: StoredRoutePolicy[];
   roles: StoredRole[];
   assignments: StoredAssignment[];
+  sessions: StoredAuthSession[];
+  signingKeys: Array<Omit<StoredSigningKey, 'privateKeyPem'>>;
+  auditEvents: StoredAuditEvent[];
   counts: {
     products: number;
     workspaces: number;
@@ -53,6 +60,9 @@ export interface AdminOverview {
     routePolicies: number;
     roles: number;
     assignments: number;
+    sessions: number;
+    signingKeys: number;
+    auditEvents: number;
   };
 }
 
@@ -89,7 +99,7 @@ export class NotImplementedAdminService
     return { ok: false, message: 'role_persistence_not_ready' };
   }
 
-  async assignRole(_userId: string, _role: string): Promise<AdminCommandResult> {
+  async assignRole(_command: AssignmentAdminCommand): Promise<AdminCommandResult> {
     return { ok: false, message: 'assignment_persistence_not_ready' };
   }
 }

@@ -29,3 +29,9 @@ export interface RoutePolicyAdminCommand {
   methods: string[];
   requiredRoles: string[];
 }
+
+export interface AssignmentAdminCommand {
+  userId: string;
+  role: string;
+  workspaceId?: string;
+}

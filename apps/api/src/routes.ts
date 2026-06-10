@@ -157,7 +157,11 @@ export async function buildApiRoutes(issuer: string, dataDirOrContext?: string |
       path: '/admin/assignments',
       handler: async (request) =>
         handleAdminResponse(
-          await adminService.assignRole(requireBodyString(readBody(request), 'userId'), requireBodyString(readBody(request), 'role')),
+          await adminService.assignRole({
+            userId: requireBodyString(readBody(request), 'userId'),
+            role: requireBodyString(readBody(request), 'role'),
+            workspaceId: readOptionalBodyString(readBody(request), 'workspaceId'),
+          }),
         ),
     },
   ];

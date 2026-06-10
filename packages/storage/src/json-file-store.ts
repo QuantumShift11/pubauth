@@ -47,7 +47,7 @@ export class JsonFileStore<T extends object> {
   private async readUnlocked(): Promise<T> {
     try {
       const raw = await readFile(this.filePath, 'utf8');
-      return JSON.parse(raw) as T;
+      return this.mergeWithDefaults(JSON.parse(raw) as Partial<T>);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         await this.writeUnlocked(this.defaultValue);
@@ -66,5 +66,12 @@ export class JsonFileStore<T extends object> {
     const tempPath = `${target}.${process.pid}.tmp`;
     await writeFile(tempPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
     await rename(tempPath, target);
+  }
+
+  private mergeWithDefaults(value: Partial<T>): T {
+    return {
+      ...structuredClone(this.defaultValue),
+      ...value,
+    } as T;
   }
 }

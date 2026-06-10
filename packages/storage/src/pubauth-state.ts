@@ -103,6 +103,18 @@ export interface StoredSigningKey {
   createdAt: string;
 }
 
+export interface StoredAuditEvent {
+  id: string;
+  actor: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  workspaceId?: string;
+  outcome: 'success' | 'failure';
+  description: string;
+  createdAt: string;
+}
+
 export interface PubAuthState {
   products: StoredProduct[];
   workspaces: StoredWorkspace[];
@@ -115,6 +127,7 @@ export interface PubAuthState {
   refreshTokens: StoredRefreshToken[];
   sessions: StoredAuthSession[];
   signingKeys: StoredSigningKey[];
+  auditEvents: StoredAuditEvent[];
 }
 
 export function createDefaultPubAuthState(): PubAuthState {
@@ -177,5 +190,6 @@ export function createDefaultPubAuthState(): PubAuthState {
     refreshTokens: [],
     sessions: [],
     signingKeys: [],
+    auditEvents: [],
   };
 }

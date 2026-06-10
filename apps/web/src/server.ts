@@ -3,6 +3,7 @@ import { extname, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadConfig } from '../../../packages/config/src/index.js';
 import { startNodeServer, type HttpRequest, type Route } from '../../../packages/http/src/index.js';
+import type { BootstrapPayload } from './bootstrap-types.js';
 
 const clientRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../client');
 
@@ -11,32 +12,11 @@ interface HealthPayload {
   service: string;
 }
 
-interface DiscoveryPayload {
-  issuer: string;
-  authorization_endpoint: string;
-  token_endpoint: string;
-  jwks_uri: string;
-  userinfo_endpoint: string;
-}
+type DiscoveryPayload = BootstrapPayload['discovery'];
 
-interface JwksPayload {
-  keys: Array<{
-    kid: string;
-    alg: string;
-    use: string;
-    kty: string;
-  }>;
-}
+type JwksPayload = BootstrapPayload['jwks'];
 
-interface AdminOverviewPayload {
-  products: Array<{ id: string; name: string; slug: string; environment: string; status: string }>;
-  workspaces: Array<{ id: string; name: string; slug: string; state: string }>;
-  clients: Array<{ id: string; clientId: string; productId: string; clientType: string; isActive: boolean }>;
-  routePolicies: Array<{ id: string; productId: string; upstreamUrl: string; pathPattern: string; methods: string[]; requiredRoles: string[] }>;
-  roles: Array<{ id: string; name: string }>;
-  assignments: Array<{ id: string; userId: string; role: string }>;
-  counts: Record<string, number>;
-}
+type AdminOverviewPayload = BootstrapPayload['admin'];
 
 export async function startWebService(): Promise<void> {
   const config = loadConfig('web');
@@ -80,6 +60,16 @@ export function buildWebRoutes(
       method: 'POST',
       path: '/api/admin/route-policies',
       handler: async (request) => proxyJson(apiBase, '/admin/route-policies', request, fetchImpl),
+    },
+    {
+      method: 'POST',
+      path: '/api/admin/roles',
+      handler: async (request) => proxyJson(apiBase, '/admin/roles', request, fetchImpl),
+    },
+    {
+      method: 'POST',
+      path: '/api/admin/assignments',
+      handler: async (request) => proxyJson(apiBase, '/admin/assignments', request, fetchImpl),
     },
     {
       method: 'GET',

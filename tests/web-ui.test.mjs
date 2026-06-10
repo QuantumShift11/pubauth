@@ -21,12 +21,35 @@ test('web bootstrap route composes API health, discovery, and jwks', async () =>
     }
     if (url.endsWith('/admin/overview')) {
       return jsonResponse({
-        products: [{ id: 'product-1', name: 'Atlas', slug: 'atlas', environment: 'local', status: 'active' }],
-        workspaces: [{ id: 'workspace-1', name: 'Core', slug: 'core', state: 'active' }],
-        clients: [{ id: 'client-1', clientId: 'pubauth-client', productId: 'product-1', clientType: 'public', isActive: true }],
-        routePolicies: [{ id: 'policy-1', productId: 'product-1', upstreamUrl: 'http://upstream.local', pathPattern: '/dashboard/**', methods: ['GET'], requiredRoles: ['admin'] }],
-        roles: [{ id: 'role-1', name: 'admin' }],
-        assignments: [{ id: 'assignment-1', userId: 'user-1', role: 'admin' }],
+        products: [{ id: 'product-1', name: 'Atlas', slug: 'atlas', environment: 'local', status: 'active', createdAt: '2026-06-10T00:00:00.000Z' }],
+        workspaces: [{ id: 'workspace-1', name: 'Core', slug: 'core', state: 'active', createdAt: '2026-06-10T00:00:00.000Z' }],
+        clients: [{
+          id: 'client-1',
+          clientId: 'pubauth-client',
+          productId: 'product-1',
+          clientType: 'public',
+          allowedRedirectUris: ['http://localhost:3000/callback'],
+          logoutRedirectUris: [],
+          allowedScopes: ['openid'],
+          isActive: true,
+          createdAt: '2026-06-10T00:00:00.000Z',
+        }],
+        routePolicies: [{
+          id: 'policy-1',
+          productId: 'product-1',
+          upstreamUrl: 'http://upstream.local',
+          pathPattern: '/dashboard/**',
+          methods: ['GET'],
+          requiredRoles: ['admin'],
+          priority: 100,
+          state: 'active',
+          createdAt: '2026-06-10T00:00:00.000Z',
+        }],
+        roles: [{ id: 'role-1', name: 'admin', createdAt: '2026-06-10T00:00:00.000Z' }],
+        assignments: [{ id: 'assignment-1', userId: 'user-1', role: 'admin', workspaceId: 'workspace-1', createdAt: '2026-06-10T00:00:00.000Z' }],
+        sessions: [{ id: 'session-1', subjectId: 'user-1', workspaceId: 'workspace-1', createdAt: '2026-06-10T00:00:00.000Z', expiresAt: '2026-06-11T00:00:00.000Z' }],
+        signingKeys: [{ keyId: 'dev-key', algorithm: 'RS256', status: 'active', createdAt: '2026-06-10T00:00:00.000Z', publicKeyPem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----' }],
+        auditEvents: [{ id: 'audit-1', actor: 'system', action: 'bootstrap', entityType: 'system', entityId: 'system', outcome: 'success', description: 'Bootstrap complete', createdAt: '2026-06-10T00:00:00.000Z' }],
         counts: {
           products: 1,
           workspaces: 1,
@@ -34,6 +57,9 @@ test('web bootstrap route composes API health, discovery, and jwks', async () =>
           routePolicies: 1,
           roles: 1,
           assignments: 1,
+          sessions: 1,
+          signingKeys: 1,
+          auditEvents: 1,
         },
       });
     }
