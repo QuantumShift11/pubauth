@@ -2,9 +2,13 @@ import { randomToken, sha256Hex } from '../../crypto/src/index.js';
 import type { AuthorizationCodeStore } from './authorization-code.js';
 import type { TokenIssuer, TokenRequest, TokenResponse } from './token.js';
 import { verifyPkceS256 } from './pkce.js';
+import type { AccessTokenStore } from './token-store.js';
 
 export class DevTokenIssuer implements TokenIssuer {
-  constructor(private readonly codes: AuthorizationCodeStore) {}
+  constructor(
+    private readonly codes: AuthorizationCodeStore,
+    private readonly accessTokens?: AccessTokenStore,
+  ) {}
 
   async issueToken(request: TokenRequest): Promise<TokenResponse> {
     if (request.grantType !== 'authorization_code') {
@@ -35,12 +39,23 @@ export class DevTokenIssuer implements TokenIssuer {
 
     await this.codes.markUsed(codeHash, new Date());
 
+    const accessToken = randomToken(32);
+    const expiresIn = 3600;
+
+    await this.accessTokens?.save({
+      accessToken,
+      subjectId: code.subjectId,
+      clientId: code.clientId,
+      scopes: code.scopes,
+      expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+    });
+
     return {
-      accessToken: randomToken(32),
+      accessToken,
       idToken: randomToken(32),
       refreshToken: randomToken(32),
       tokenType: 'Bearer',
-      expiresIn: 3600,
+      expiresIn,
       scope: code.scopes.join(' '),
     };
   }
