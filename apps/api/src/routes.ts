@@ -3,11 +3,14 @@ import {
   buildDiscoveryDocument,
   DefaultAuthorizationService,
   DevTokenIssuer,
+  DevUserInfoService,
+  MemoryAccessTokenStore,
   MemoryAuthorizationCodeStore,
   MemoryOidcClientRepository,
 } from '../../../packages/oidc/src/index.js';
 
 const codeStore = new MemoryAuthorizationCodeStore();
+const accessTokenStore = new MemoryAccessTokenStore();
 const clientStore = new MemoryOidcClientRepository([
   {
     clientId: 'dev-client',
@@ -18,7 +21,8 @@ const clientStore = new MemoryOidcClientRepository([
   },
 ]);
 const authorizationService = new DefaultAuthorizationService(clientStore, codeStore);
-const tokenIssuer = new DevTokenIssuer(codeStore);
+const tokenIssuer = new DevTokenIssuer(codeStore, accessTokenStore);
+const userInfoService = new DevUserInfoService(accessTokenStore);
 
 export function buildApiRoutes(issuer: string): Route[] {
   return [
@@ -60,7 +64,7 @@ export function buildApiRoutes(issuer: string): Route[] {
     {
       method: 'GET',
       path: '/oauth2/userinfo',
-      handler: () => ({ statusCode: 501, body: { error: 'userinfo_not_implemented' } }),
+      handler: async (request) => handleUserInfo(request),
     },
     {
       method: 'GET',
@@ -140,6 +144,16 @@ async function handleToken(request: HttpRequest) {
   }
 }
 
+async function handleUserInfo(request: HttpRequest) {
+  try {
+    const accessToken = readBearerToken(request);
+    const response = await userInfoService.getUserInfo({ accessToken });
+    return { statusCode: 200, body: response };
+  } catch (error) {
+    return { statusCode: 401, body: { error: error instanceof Error ? error.message : 'invalid_token' } };
+  }
+}
+
 function requireQuery(request: HttpRequest, name: string): string {
   const value = request.query[name];
   if (!value) {
@@ -158,4 +172,12 @@ function requireBody(body: Record<string, string>, name: string): string {
 
 function readBodyValue(body: Record<string, string>, name: string): string | undefined {
   return typeof body[name] === 'string' ? body[name] : undefined;
+}
+
+function readBearerToken(request: HttpRequest): string {
+  const header = request.headers.authorization ?? request.headers.Authorization;
+  if (!header?.startsWith('Bearer ')) {
+    throw new Error('missing_bearer_token');
+  }
+  return header.slice('Bearer '.length);
 }
