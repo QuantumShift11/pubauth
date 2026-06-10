@@ -72,6 +72,26 @@ export function buildApiRoutes(issuer: string): Route[] {
       path: '/oauth2/logout',
       handler: () => ({ statusCode: 501, body: { error: 'logout_not_implemented' } }),
     },
+    {
+      method: 'POST',
+      path: '/admin/products',
+      handler: () => ({ statusCode: 501, body: { error: 'admin_products_not_implemented' } }),
+    },
+    {
+      method: 'POST',
+      path: '/admin/workspaces',
+      handler: () => ({ statusCode: 501, body: { error: 'admin_workspaces_not_implemented' } }),
+    },
+    {
+      method: 'POST',
+      path: '/admin/clients',
+      handler: () => ({ statusCode: 501, body: { error: 'admin_clients_not_implemented' } }),
+    },
+    {
+      method: 'POST',
+      path: '/admin/route-policies',
+      handler: () => ({ statusCode: 501, body: { error: 'admin_route_policies_not_implemented' } }),
+    },
   ];
 }
 
