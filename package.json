@@ -4,13 +4,17 @@
   "private": true,
   "type": "module",
   "description": "Standalone OIDC provider, no-code authentication gateway, and gateway-level RBAC platform.",
+  "workspaces": [
+    "apps/web"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && npm --workspace apps/web run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm --workspace apps/web run typecheck",
     "test": "npm run build && node --test tests/*.mjs",
     "start:api": "node dist/apps/api/src/main.js",
     "start:gateway": "node dist/apps/gateway/src/main.js",
-    "start:worker": "node dist/apps/worker/src/main.js"
+    "start:worker": "node dist/apps/worker/src/main.js",
+    "start:web": "node dist/apps/web/src/server.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

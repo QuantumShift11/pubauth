@@ -11,6 +11,7 @@ export interface HttpRequest {
 export interface HttpResponse {
   statusCode: number;
   headers?: Record<string, string>;
+  contentType?: string;
   body?: unknown;
 }
 
@@ -23,5 +24,21 @@ export interface Route {
 }
 
 export function findRoute(routes: Route[], method: HttpMethod, path: string): Route | null {
-  return routes.find((route) => route.method === method && route.path === path) ?? null;
+  return (
+    routes.find((route) => route.method === method && route.path === path) ??
+    routes.find((route) => route.method === method && routeMatches(route.path, path)) ??
+    null
+  );
+}
+
+function routeMatches(pattern: string, path: string): boolean {
+  if (pattern === '*' || pattern === '/**') {
+    return true;
+  }
+
+  if (pattern.endsWith('/**')) {
+    return path.startsWith(pattern.slice(0, -3));
+  }
+
+  return false;
 }

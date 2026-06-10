@@ -3,6 +3,7 @@ export interface AppConfig {
   environment: 'local' | 'dev' | 'qa' | 'prod';
   publicIssuer: string;
   port: number;
+  apiBase: string;
 }
 
 export function loadConfig(serviceName: string): AppConfig {
@@ -11,6 +12,7 @@ export function loadConfig(serviceName: string): AppConfig {
     environment: readEnvironment(process.env.PUBAUTH_ENV),
     publicIssuer: process.env.PUBAUTH_ISSUER ?? 'http://localhost:8080',
     port: Number(process.env.PORT ?? '8080'),
+    apiBase: process.env.PUBAUTH_API_BASE ?? 'http://localhost:8080',
   };
 }
 

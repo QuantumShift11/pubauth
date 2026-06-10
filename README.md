@@ -84,6 +84,12 @@ Run Worker:
 PUBAUTH_ENV=local PUBAUTH_ISSUER=http://localhost:8080 PORT=8082 npm run start:worker
 ```
 
+Run Web UI:
+
+```bash
+PUBAUTH_ENV=local PUBAUTH_ISSUER=http://localhost:8080 PUBAUTH_API_BASE=http://localhost:8080 PORT=3000 npm run start:web
+```
+
 Docker Compose:
 
 ```bash
@@ -92,4 +98,4 @@ docker compose up --build
 
 ## Current status
 
-This repo is now an implementation-ready skeleton. Some OIDC endpoints intentionally return `501` until storage, login, token issuance, and provider adapters are implemented.
+This repo now includes a React control-plane UI, signed RS256 OIDC issuance, JWKS exposure, and wired admin proxy endpoints. Durable storage, provider adapters, and full admin persistence are still placeholder-backed.

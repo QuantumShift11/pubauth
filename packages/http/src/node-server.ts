@@ -81,11 +81,23 @@ async function readBody(incoming: IncomingMessage): Promise<unknown> {
 
 function writeResponse(outgoing: ServerResponse, response: HttpResponse): void {
   outgoing.statusCode = response.statusCode;
-  outgoing.setHeader('content-type', 'application/json');
 
   for (const [name, value] of Object.entries(response.headers ?? {})) {
     outgoing.setHeader(name, value);
   }
 
+  if (typeof response.body === 'string') {
+    outgoing.setHeader('content-type', response.contentType ?? 'text/plain; charset=utf-8');
+    outgoing.end(response.body);
+    return;
+  }
+
+  if (Buffer.isBuffer(response.body) || response.body instanceof Uint8Array) {
+    outgoing.setHeader('content-type', response.contentType ?? 'application/octet-stream');
+    outgoing.end(response.body);
+    return;
+  }
+
+  outgoing.setHeader('content-type', response.contentType ?? 'application/json');
   outgoing.end(JSON.stringify(response.body ?? {}));
 }

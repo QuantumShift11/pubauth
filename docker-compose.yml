@@ -9,6 +9,19 @@ services:
     ports:
       - "8080:8080"
 
+  web:
+    build: .
+    command: node dist/apps/web/src/server.js
+    environment:
+      PUBAUTH_ENV: local
+      PUBAUTH_ISSUER: http://api:8080
+      PUBAUTH_API_BASE: http://api:8080
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
   gateway:
     build: .
     command: node dist/apps/gateway/src/main.js
