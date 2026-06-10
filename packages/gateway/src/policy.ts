@@ -1,3 +1,5 @@
+import { matchPathPattern, normalizeRequestPath } from '../../http/src/path-pattern.js';
+
 export interface GatewayRouteRule {
   appId: string;
   upstreamUrl: string;
@@ -18,7 +20,11 @@ export function resolveGatewayRoute(
   method: string,
   rules: GatewayRouteRule[],
 ): GatewayRouteDecision {
-  const rule = rules.find((item) => pathMatches(item.pathPattern, path));
+  if (!normalizeRequestPath(path)) {
+    return { matched: false, reason: 'invalid_path' };
+  }
+
+  const rule = rules.find((item) => matchPathPattern(item.pathPattern, path));
 
   if (!rule) {
     return { matched: false, reason: 'no_route_rule' };
@@ -29,11 +35,4 @@ export function resolveGatewayRoute(
   }
 
   return { matched: true, appId: rule.appId, upstreamUrl: rule.upstreamUrl, reason: 'matched' };
-}
-
-function pathMatches(pattern: string, path: string): boolean {
-  if (pattern.endsWith('/**')) {
-    return path.startsWith(pattern.slice(0, -3));
-  }
-  return pattern === path;
 }

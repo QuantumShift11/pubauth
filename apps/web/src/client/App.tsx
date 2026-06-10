@@ -49,14 +49,12 @@ interface PaletteAction {
 }
 
 interface AuthState {
-  accessToken: string;
-  idToken?: string;
   subjectId: string;
   workspaceId: string;
   roles: string[];
   groups: string[];
-  expiresAt: number;
   mode: ConsoleMode;
+  oidcCompleted: boolean;
 }
 
 interface LoginFormState {
@@ -100,7 +98,6 @@ const defaultLoginFormState: LoginFormState = {
   password: 'ChangeMe-Admin!1',
 };
 
-const authStorageKey = 'pubauth.auth';
 const loginIntentStorageKey = 'pubauth.login-intent';
 
 const adminSections: Array<{ id: SectionId; label: string; description: string }> = [
@@ -160,19 +157,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const stored = readStoredAuth();
-    if (!stored) {
-      return;
-    }
-
-    if (stored.expiresAt <= Date.now()) {
-      clearAuthState();
-      return;
-    }
-
-    setAuth(stored);
-    setMode(stored.mode);
-    setSelectedWorkspaceId(stored.workspaceId);
+    void restoreSessionAuth({
+      setAuth,
+      setMode,
+      setSelectedWorkspaceId,
+      setAuthError,
+    });
   }, []);
 
   useEffect(() => {
@@ -572,7 +562,11 @@ export function App() {
           <p className="eyebrow">Signed in</p>
           <strong>{authSummary}</strong>
           <p className="sidebar-note">
-            {auth?.idToken ? 'OIDC Authorization Code + PKCE completed.' : 'No identity token present.'}
+            {auth?.oidcCompleted
+              ? 'OIDC Authorization Code + PKCE completed.'
+              : auth
+                ? 'Trusted browser session restored from the server cookie.'
+                : 'No active OIDC browser session.'}
           </p>
           <button
             className="ghost-button"
@@ -2529,17 +2523,14 @@ async function completeLogin({
     const hasAdminRole = roles.some((role) => role === 'super_admin' || role === 'tenant_admin' || role === 'product_admin');
     const mode = intent.mode === 'admin' && hasAdminRole ? 'admin' : intent.mode === 'tenant' && hasAdminRole ? 'tenant' : 'user';
     const authState: AuthState = {
-      accessToken: tokenPayload.accessToken,
-      idToken: tokenPayload.idToken,
       subjectId: userInfoPayload.sub,
       workspaceId,
       roles,
       groups,
-      expiresAt: Date.now() + tokenPayload.expiresIn * 1000,
       mode,
+      oidcCompleted: Boolean(tokenPayload.idToken),
     };
 
-    saveAuthState(authState);
     setAuth(authState);
     setMode(mode);
     setSelectedWorkspaceId(workspaceId);
@@ -2568,6 +2559,55 @@ async function loadSelfServiceOverview(
   } catch (caught) {
     setAuthError(caught instanceof Error ? caught.message : 'self_service_overview_failed');
   }
+}
+
+async function restoreSessionAuth({
+  setAuth,
+  setMode,
+  setSelectedWorkspaceId,
+  setAuthError,
+}: {
+  setAuth: (value: AuthState | null) => void;
+  setMode: (value: ConsoleMode) => void;
+  setSelectedWorkspaceId: (value: string) => void;
+  setAuthError: (value: string | null) => void;
+}) {
+  try {
+    const response = await fetch('/api/auth/session');
+    if (response.status === 401) {
+      setAuth(null);
+      return;
+    }
+
+    const payload = (await response.json()) as SelfServiceOverview & { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `session_restore_failed_${response.status}`);
+    }
+
+    const authState = buildAuthStateFromOverview(payload, false);
+    setAuth(authState);
+    setMode(authState.mode);
+    setSelectedWorkspaceId(authState.workspaceId);
+    setAuthError(null);
+  } catch (caught) {
+    setAuth(null);
+    setAuthError(caught instanceof Error ? caught.message : 'session_restore_failed');
+  }
+}
+
+function buildAuthStateFromOverview(overview: SelfServiceOverview, oidcCompleted: boolean): AuthState {
+  const roles = [...overview.user.roles];
+  const hasAdminRole = roles.some((role) => role === 'super_admin');
+  const hasTenantRole = roles.some((role) => role === 'tenant_admin' || role === 'product_admin');
+
+  return {
+    subjectId: overview.user.subjectId,
+    workspaceId: overview.user.workspaceId,
+    roles,
+    groups: [],
+    mode: hasAdminRole ? 'admin' : hasTenantRole ? 'tenant' : 'user',
+    oidcCompleted,
+  };
 }
 
 async function logout({
@@ -2599,29 +2639,8 @@ async function logout({
   window.history.replaceState({}, document.title, window.location.pathname);
 }
 
-function saveAuthState(value: AuthState) {
-  window.localStorage.setItem(authStorageKey, JSON.stringify(value));
-}
-
-function readStoredAuth(): AuthState | null {
-  const raw = window.localStorage.getItem(authStorageKey);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as AuthState;
-    if (!parsed || typeof parsed.accessToken !== 'string' || typeof parsed.subjectId !== 'string') {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
 function clearAuthState() {
-  window.localStorage.removeItem(authStorageKey);
+  return;
 }
 
 function saveLoginIntent(value: {

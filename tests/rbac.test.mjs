@@ -26,3 +26,30 @@ test('RBAC denies missing role', () => {
   assert.equal(decision.allowed, false);
   assert.equal(decision.reason, 'missing_role');
 });
+
+test('RBAC uses segment-safe wildcard matching', () => {
+  const allowed = evaluatePolicy(principal, { productId: 'app-1', path: '/reports/summary', method: 'GET' }, [
+    { pathPattern: '/reports/**', methods: ['GET'], requiredRoles: ['viewer'] },
+  ]);
+  const denied = evaluatePolicy(principal, { productId: 'app-1', path: '/reports-admin', method: 'GET' }, [
+    { pathPattern: '/reports/**', methods: ['GET'], requiredRoles: ['viewer'] },
+  ]);
+
+  assert.equal(allowed.allowed, true);
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.reason, 'no_matching_rule');
+});
+
+test('RBAC rejects encoded traversal and separator ambiguity', () => {
+  const traversal = evaluatePolicy(principal, { productId: 'app-1', path: '/reports/%2e%2e/admin', method: 'GET' }, [
+    { pathPattern: '/reports/**', methods: ['GET'], requiredRoles: ['viewer'] },
+  ]);
+  const encodedSlash = evaluatePolicy(principal, { productId: 'app-1', path: '/reports%2fadmin', method: 'GET' }, [
+    { pathPattern: '/reports/**', methods: ['GET'], requiredRoles: ['viewer'] },
+  ]);
+
+  assert.equal(traversal.allowed, false);
+  assert.equal(traversal.reason, 'invalid_path');
+  assert.equal(encodedSlash.allowed, false);
+  assert.equal(encodedSlash.reason, 'invalid_path');
+});

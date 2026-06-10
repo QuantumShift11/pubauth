@@ -1,4 +1,4 @@
-import { sha256Hex } from '../../crypto/src/index.js';
+import { hashSecret, verifySecret } from '../../crypto/src/index.js';
 
 export interface OidcClient {
   clientId: string;
@@ -40,7 +40,7 @@ export function verifyClientSecret(client: OidcClient, clientSecret: string | un
     return false;
   }
 
-  return sha256Hex(clientSecret) === client.clientSecretHash;
+  return verifySecret(clientSecret, client.clientSecretHash);
 }
 
 export function normalizeTokenEndpointAuthMethod(value: string | undefined): OidcClient['tokenEndpointAuthMethod'] {
@@ -48,4 +48,8 @@ export function normalizeTokenEndpointAuthMethod(value: string | undefined): Oid
     return value;
   }
   return 'none';
+}
+
+export function hashClientSecret(clientSecret: string): string {
+  return hashSecret(clientSecret);
 }

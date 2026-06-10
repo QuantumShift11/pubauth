@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { sha256Hex } from '../dist/packages/crypto/src/index.js';
+import { hashSecret, sha256Hex } from '../dist/packages/crypto/src/index.js';
 import {
   closeStorageAdapterConnections,
   MongoClientRepository,
@@ -32,7 +32,7 @@ test(
       clientId: 'mongo-client',
       clientType: 'confidential',
       tokenEndpointAuthMethod: 'client_secret_basic',
-      clientSecretHash: 'hashed-secret',
+      clientSecretHash: hashSecret('mongo-client-secret'),
       allowedRedirectUris: ['http://localhost/callback'],
       logoutRedirectUris: [],
       allowedScopes: ['openid', 'profile'],

@@ -1,3 +1,5 @@
+import { matchPathPattern, normalizeRequestPath } from '../../http/src/path-pattern.js';
+
 export interface PrincipalContext {
   userId: string;
   workspaceId: string;
@@ -20,7 +22,7 @@ export interface PolicyRule {
 
 export interface PolicyDecision {
   allowed: boolean;
-  reason: 'allowed' | 'no_matching_rule' | 'method_not_allowed' | 'missing_role' | 'missing_group';
+  reason: 'allowed' | 'invalid_path' | 'no_matching_rule' | 'method_not_allowed' | 'missing_role' | 'missing_group';
 }
 
 export function evaluatePolicy(
@@ -28,7 +30,11 @@ export function evaluatePolicy(
   resource: ResourceContext,
   rules: PolicyRule[],
 ): PolicyDecision {
-  const matchingRule = rules.find((rule) => pathMatches(rule.pathPattern, resource.path));
+  if (!normalizeRequestPath(resource.path)) {
+    return { allowed: false, reason: 'invalid_path' };
+  }
+
+  const matchingRule = rules.find((rule) => matchPathPattern(rule.pathPattern, resource.path));
 
   if (!matchingRule) {
     return { allowed: false, reason: 'no_matching_rule' };
@@ -51,11 +57,4 @@ export function evaluatePolicy(
   }
 
   return { allowed: true, reason: 'allowed' };
-}
-
-function pathMatches(pattern: string, path: string): boolean {
-  if (pattern.endsWith('/**')) {
-    return path.startsWith(pattern.slice(0, -3));
-  }
-  return pattern === path;
 }

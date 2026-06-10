@@ -1,3 +1,5 @@
+import { matchPathPattern } from './path-pattern.js';
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface HttpRequest {
@@ -32,13 +34,8 @@ export function findRoute(routes: Route[], method: HttpMethod, path: string): Ro
 }
 
 function routeMatches(pattern: string, path: string): boolean {
-  if (pattern === '*' || pattern === '/**') {
+  if (pattern === '*') {
     return true;
   }
-
-  if (pattern.endsWith('/**')) {
-    return path.startsWith(pattern.slice(0, -3));
-  }
-
-  return false;
+  return matchPathPattern(pattern, path);
 }

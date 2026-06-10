@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { randomToken, sha256Hex } from '../../crypto/src/index.js';
+import { randomToken } from '../../crypto/src/index.js';
 import type {
   AssignmentRepository,
   AuditRepository,
@@ -35,6 +35,7 @@ import type {
   RoleAdminService,
   WorkspaceAdminService,
 } from './services.js';
+import { hashClientSecret } from '../../oidc/src/client.js';
 
 function normalizeSlug(value: string): string {
   return value
@@ -174,7 +175,7 @@ export class FileAdminService
       clientId,
       clientType: command.clientType,
       tokenEndpointAuthMethod: command.clientType === 'confidential' ? 'client_secret_basic' : 'none',
-      clientSecretHash: clientSecret ? sha256Hex(clientSecret) : undefined,
+      clientSecretHash: clientSecret ? hashClientSecret(clientSecret) : undefined,
       allowedRedirectUris: [...command.redirectUris],
       logoutRedirectUris: [],
       allowedScopes: [...new Set(['openid', ...command.scopes])],

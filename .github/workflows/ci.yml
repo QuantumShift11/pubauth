@@ -24,3 +24,29 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+
+  integration-storage:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    env:
+      PUBAUTH_TEST_MONGO_URI: mongodb://127.0.0.1:27017
+      PUBAUTH_TEST_REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install
+      - name: Integration test
+        run: npm run test:integration

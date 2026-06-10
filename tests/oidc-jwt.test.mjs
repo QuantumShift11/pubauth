@@ -357,6 +357,88 @@ test('confidential clients require valid token endpoint authentication', async (
   assert.equal(invalidSecret.body.error, 'invalid_client');
 });
 
+test('refresh token rotation revokes the family on replay reuse', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-api-'));
+  const issuer = 'https://issuer.example';
+  const redirectUri = 'http://localhost:3000/callback';
+  const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
+  const routes = await buildApiRoutes(issuer, dataDir);
+  const loginRoute = findRoute(routes, 'POST', '/auth/login');
+  const authorizeRoute = findRoute(routes, 'GET', '/oauth2/authorize');
+  const tokenRoute = findRoute(routes, 'POST', '/oauth2/token');
+  assert.ok(loginRoute);
+  assert.ok(authorizeRoute);
+  assert.ok(tokenRoute);
+
+  const sessionResponse = await loginRoute.handler(
+    createRequest('POST', '/auth/login', {}, {}, {
+      username: 'user@atlas.local',
+      password: 'ChangeMe-User!1',
+    }),
+  );
+  const cookie = sessionResponse.headers?.['set-cookie'];
+
+  const authorizeResponse = await authorizeRoute.handler(
+    createRequest(
+      'GET',
+      '/oauth2/authorize',
+      {
+        client_id: 'pubauth-client',
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid profile email',
+        code_challenge: sha256Base64Url(verifier),
+        code_challenge_method: 'S256',
+      },
+      { cookie },
+    ),
+  );
+  const code = new URL(authorizeResponse.body.redirect).searchParams.get('code');
+  assert.ok(code);
+
+  const initialTokenResponse = await tokenRoute.handler(
+    createRequest('POST', '/oauth2/token', {}, {}, {
+      grant_type: 'authorization_code',
+      client_id: 'pubauth-client',
+      redirect_uri: redirectUri,
+      code,
+      code_verifier: verifier,
+    }),
+  );
+  assert.equal(initialTokenResponse.statusCode, 200);
+  assert.equal(typeof initialTokenResponse.body.refreshToken, 'string');
+
+  const firstRotation = await tokenRoute.handler(
+    createRequest('POST', '/oauth2/token', {}, {}, {
+      grant_type: 'refresh_token',
+      client_id: 'pubauth-client',
+      refresh_token: initialTokenResponse.body.refreshToken,
+    }),
+  );
+  assert.equal(firstRotation.statusCode, 200);
+  assert.equal(typeof firstRotation.body.refreshToken, 'string');
+
+  const replayAttempt = await tokenRoute.handler(
+    createRequest('POST', '/oauth2/token', {}, {}, {
+      grant_type: 'refresh_token',
+      client_id: 'pubauth-client',
+      refresh_token: initialTokenResponse.body.refreshToken,
+    }),
+  );
+  assert.equal(replayAttempt.statusCode, 400);
+  assert.equal(replayAttempt.body.error, 'invalid_grant');
+
+  const descendantUseAfterReplay = await tokenRoute.handler(
+    createRequest('POST', '/oauth2/token', {}, {}, {
+      grant_type: 'refresh_token',
+      client_id: 'pubauth-client',
+      refresh_token: firstRotation.body.refreshToken,
+    }),
+  );
+  assert.equal(descendantUseAfterReplay.statusCode, 400);
+  assert.equal(descendantUseAfterReplay.body.error, 'invalid_grant');
+});
+
 function verifyJwtWithJwk(token, jwk) {
   const [encodedHeader, encodedPayload, encodedSignature] = token.split('.');
   const verifier = createVerify('RSA-SHA256');
