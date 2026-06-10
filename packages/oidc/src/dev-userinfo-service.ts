@@ -11,7 +11,7 @@ export class DevUserInfoService implements UserInfoService {
   async getUserInfo(request: UserInfoRequest): Promise<UserInfoResponse> {
     if (this.jwtSigner) {
       const verified = this.jwtSigner.verify(request.accessToken, { issuer: this.jwtSigner.issuer });
-      if (verified.payload.token_use !== 'access') {
+      if (verified.payload.token_use !== 'access_token') {
         throw new Error('invalid_token_use');
       }
 

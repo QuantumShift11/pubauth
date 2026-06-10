@@ -9,6 +9,7 @@ import {
   MemoryAuthorizationCodeStore,
   MemoryOidcClientRepository,
 } from '../../../packages/oidc/src/index.js';
+import { NotImplementedAdminService } from '../../../packages/admin/src/index.js';
 
 const codeStore = new MemoryAuthorizationCodeStore();
 const accessTokenStore = new MemoryAccessTokenStore();
@@ -21,13 +22,28 @@ const clientStore = new MemoryOidcClientRepository([
     isActive: true,
   },
 ]);
-let jwtSigner = RsaJwtSigner.generate('http://localhost:8080');
 const authorizationService = new DefaultAuthorizationService(clientStore, codeStore);
-const tokenIssuer = new DevTokenIssuer(codeStore, accessTokenStore, jwtSigner);
-const userInfoService = new DevUserInfoService(accessTokenStore, jwtSigner);
+const adminService = new NotImplementedAdminService();
 
-export function buildApiRoutes(issuer: string): Route[] {
-  jwtSigner = RsaJwtSigner.generate(issuer);
+export interface ApiRouteContext {
+  jwtSigner: RsaJwtSigner;
+  tokenIssuer: DevTokenIssuer;
+  userInfoService: DevUserInfoService;
+  authorizationService: DefaultAuthorizationService;
+}
+
+export function buildApiContext(issuer: string): ApiRouteContext {
+  const jwtSigner = RsaJwtSigner.generate(issuer);
+  return {
+    jwtSigner,
+    tokenIssuer: new DevTokenIssuer(codeStore, accessTokenStore, jwtSigner),
+    userInfoService: new DevUserInfoService(accessTokenStore, jwtSigner),
+    authorizationService,
+  };
+}
+
+export function buildApiRoutes(issuer: string, context = buildApiContext(issuer)): Route[] {
+  const { jwtSigner, tokenIssuer, userInfoService, authorizationService } = context;
 
   return [
     {
@@ -53,12 +69,12 @@ export function buildApiRoutes(issuer: string): Route[] {
     {
       method: 'GET',
       path: '/oauth2/authorize',
-      handler: async (request) => handleAuthorize(request),
+      handler: async (request) => handleAuthorize(request, authorizationService),
     },
     {
       method: 'POST',
       path: '/oauth2/token',
-      handler: async (request) => handleToken(request),
+      handler: async (request) => handleToken(request, tokenIssuer),
     },
     {
       method: 'GET',
@@ -68,7 +84,7 @@ export function buildApiRoutes(issuer: string): Route[] {
     {
       method: 'GET',
       path: '/oauth2/userinfo',
-      handler: async (request) => handleUserInfo(request),
+      handler: async (request) => handleUserInfo(request, userInfoService),
     },
     {
       method: 'GET',
@@ -83,27 +99,44 @@ export function buildApiRoutes(issuer: string): Route[] {
     {
       method: 'POST',
       path: '/admin/products',
-      handler: () => ({ statusCode: 501, body: { error: 'admin_products_not_implemented' } }),
+      handler: async () => handleAdminNotImplemented('admin_products_not_implemented', adminService.createProduct({
+        name: 'pending',
+        slug: 'pending',
+        environment: 'local',
+      })),
     },
     {
       method: 'POST',
       path: '/admin/workspaces',
-      handler: () => ({ statusCode: 501, body: { error: 'admin_workspaces_not_implemented' } }),
+      handler: async () => handleAdminNotImplemented('admin_workspaces_not_implemented', adminService.createWorkspace({
+        name: 'pending',
+        slug: 'pending',
+      })),
     },
     {
       method: 'POST',
       path: '/admin/clients',
-      handler: () => ({ statusCode: 501, body: { error: 'admin_clients_not_implemented' } }),
+      handler: async () => handleAdminNotImplemented('admin_clients_not_implemented', adminService.createClient({
+        productId: 'pending',
+        clientType: 'public',
+        redirectUris: [],
+        scopes: [],
+      })),
     },
     {
       method: 'POST',
       path: '/admin/route-policies',
-      handler: () => ({ statusCode: 501, body: { error: 'admin_route_policies_not_implemented' } }),
+      handler: async () => handleAdminNotImplemented('admin_route_policies_not_implemented', adminService.createRoutePolicy({
+        productId: 'pending',
+        pathPattern: '/**',
+        methods: ['GET'],
+        requiredRoles: ['viewer'],
+      })),
     },
   ];
 }
 
-async function handleAuthorize(request: HttpRequest) {
+async function handleAuthorize(request: HttpRequest, authorizationService: DefaultAuthorizationService) {
   try {
     const response = await authorizationService.start({
       clientId: requireQuery(request, 'client_id'),
@@ -129,7 +162,7 @@ async function handleAuthorize(request: HttpRequest) {
   }
 }
 
-async function handleToken(request: HttpRequest) {
+async function handleToken(request: HttpRequest, tokenIssuer: DevTokenIssuer) {
   const body = typeof request.body === 'object' && request.body !== null ? request.body as Record<string, string> : {};
 
   try {
@@ -148,7 +181,7 @@ async function handleToken(request: HttpRequest) {
   }
 }
 
-async function handleUserInfo(request: HttpRequest) {
+async function handleUserInfo(request: HttpRequest, userInfoService: DevUserInfoService) {
   try {
     const accessToken = readBearerToken(request);
     const response = await userInfoService.getUserInfo({ accessToken });
@@ -184,4 +217,12 @@ function readBearerToken(request: HttpRequest): string {
     throw new Error('missing_bearer_token');
   }
   return header.slice('Bearer '.length);
+}
+
+async function handleAdminNotImplemented(
+  error: string,
+  resultPromise: Promise<{ ok: boolean; message: string }>,
+) {
+  await resultPromise;
+  return { statusCode: 501, body: { error } };
 }

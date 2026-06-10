@@ -47,8 +47,9 @@ export class DevTokenIssuer implements TokenIssuer {
           subject: code.subjectId,
           expiresInSeconds: expiresIn,
           claims: {
-            token_use: 'access',
+            token_use: 'access_token',
             scope: code.scopes.join(' '),
+            client_id: code.clientId,
           },
         })
       : randomToken(32);
@@ -59,8 +60,9 @@ export class DevTokenIssuer implements TokenIssuer {
           subject: code.subjectId,
           expiresInSeconds: expiresIn,
           claims: {
-            token_use: 'id',
+            token_use: 'id_token',
             scope: code.scopes.join(' '),
+            client_id: code.clientId,
           },
         })
       : randomToken(32);

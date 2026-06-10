@@ -8,6 +8,7 @@ export interface OidcClient {
 
 export interface OidcClientRepository {
   findByClientId(clientId: string): Promise<OidcClient | null>;
+  save(client: OidcClient): Promise<void>;
 }
 
 export function isRedirectUriAllowed(client: OidcClient, redirectUri: string): boolean {

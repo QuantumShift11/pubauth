@@ -47,8 +47,6 @@ export class RsaJwtSigner implements JwtSigner {
   static generate(issuer: string, keyId = 'dev-rsa-key-1'): RsaJwtSigner {
     const { privateKey, publicKey } = generateKeyPairSync('rsa', {
       modulusLength: 2048,
-      publicKeyEncoding: undefined,
-      privateKeyEncoding: undefined,
     });
 
     return new RsaJwtSigner(keyId, issuer, privateKey, publicKey);
@@ -96,6 +94,14 @@ export class RsaJwtSigner implements JwtSigner {
     const payload = parseBase64UrlJson(encodedPayload);
     const now = Math.floor((options.now ?? new Date()).getTime() / 1000);
 
+    if (header.alg !== 'RS256') {
+      throw new Error('invalid_token_algorithm');
+    }
+
+    if (header.kid !== this.keyId) {
+      throw new Error('invalid_token_key');
+    }
+
     if (payload.exp && typeof payload.exp === 'number' && payload.exp <= now) {
       throw new Error('token_expired');
     }
@@ -105,7 +111,10 @@ export class RsaJwtSigner implements JwtSigner {
     }
 
     if (options.audience && payload.aud !== options.audience) {
-      throw new Error('invalid_audience');
+      const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+      if (!audience.includes(options.audience)) {
+        throw new Error('invalid_audience');
+      }
     }
 
     return { header, payload };
