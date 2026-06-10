@@ -47,6 +47,33 @@ interface PaletteAction {
   run: () => void;
 }
 
+interface AuthState {
+  accessToken: string;
+  idToken?: string;
+  subjectId: string;
+  workspaceId: string;
+  roles: string[];
+  groups: string[];
+  expiresAt: number;
+  mode: ConsoleMode;
+}
+
+interface LoginFormState {
+  profile: 'admin' | 'tenant';
+  subjectId: string;
+  workspaceId: string;
+}
+
+interface LoginIntent {
+  state: string;
+  codeVerifier: string;
+  clientId: string;
+  redirectUri: string;
+  subjectId: string;
+  workspaceId: string;
+  mode: ConsoleMode;
+}
+
 const defaultFormState: FormState = {
   productName: 'Nebula',
   productSlug: 'nebula',
@@ -66,6 +93,15 @@ const defaultFormState: FormState = {
   assignmentRole: 'admin',
   assignmentWorkspaceId: 'workspace-core-platform',
 };
+
+const defaultLoginFormState: LoginFormState = {
+  profile: 'admin',
+  subjectId: 'admin-user',
+  workspaceId: 'workspace-core-platform',
+};
+
+const authStorageKey = 'pubauth.auth';
+const loginIntentStorageKey = 'pubauth.login-intent';
 
 const adminSections: Array<{ id: SectionId; label: string; description: string }> = [
   { id: 'overview', label: 'Overview', description: 'Runtime health and activity' },
@@ -93,8 +129,13 @@ export function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [processedLoginCode, setProcessedLoginCode] = useState<string | null>(null);
   const [actionLog, setActionLog] = useState<LogEntry[]>([]);
   const [formState, setFormState] = useState<FormState>(defaultFormState);
+  const [loginForm, setLoginForm] = useState<LoginFormState>(defaultLoginFormState);
   const [mode, setMode] = useState<ConsoleMode>('admin');
   const [section, setSection] = useState<SectionId>('overview');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
@@ -107,6 +148,22 @@ export function App() {
 
   useEffect(() => {
     void loadBootstrap();
+  }, []);
+
+  useEffect(() => {
+    const stored = readStoredAuth();
+    if (!stored) {
+      return;
+    }
+
+    if (stored.expiresAt <= Date.now()) {
+      clearAuthState();
+      return;
+    }
+
+    setAuth(stored);
+    setMode(stored.mode);
+    setSelectedWorkspaceId(stored.workspaceId);
   }, []);
 
   useEffect(() => {
@@ -146,7 +203,43 @@ export function App() {
           ? current.assignmentWorkspaceId
           : nextWorkspaceId || current.assignmentWorkspaceId,
     }));
+
+    setLoginForm((current) => ({
+      ...current,
+      workspaceId: bootstrap.admin.workspaces.some((item) => item.id === current.workspaceId) && current.workspaceId ? current.workspaceId : nextWorkspaceId || current.workspaceId,
+      subjectId: current.subjectId || (current.profile === 'admin' ? 'admin-user' : 'user-1'),
+    }));
   }, [bootstrap]);
+
+  useEffect(() => {
+    if (!bootstrap) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+    const state = url.searchParams.get('state');
+    if (!code || authBusy || code === processedLoginCode) {
+      return;
+    }
+
+    setProcessedLoginCode(code);
+    void completeLogin({
+      bootstrap,
+      code,
+      state,
+      setAuth,
+      setAuthBusy,
+      setAuthError,
+      setMode,
+      setSelectedWorkspaceId,
+      setSection,
+    }).finally(() => {
+      url.searchParams.delete('code');
+      url.searchParams.delete('state');
+      window.history.replaceState({}, document.title, `${url.pathname}${url.search}`);
+    });
+  }, [bootstrap, authBusy, processedLoginCode]);
 
   useEffect(() => {
     const visibleSections = getVisibleSections(mode);
@@ -232,7 +325,9 @@ export function App() {
   }
 
   const admin = bootstrap?.admin;
-  const sections = getVisibleSections(mode);
+  const canAccessAdmin = auth?.roles.includes('admin') ?? false;
+  const effectiveMode = canAccessAdmin ? mode : 'tenant';
+  const sections = getVisibleSections(effectiveMode);
   const activeProduct = admin?.products.find((item) => item.id === selectedProductId) ?? admin?.products[0] ?? null;
   const activeWorkspace = admin?.workspaces.find((item) => item.id === selectedWorkspaceId) ?? admin?.workspaces[0] ?? null;
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -242,41 +337,66 @@ export function App() {
   const scopedWorkspaces = filterRecords(admin?.workspaces ?? [], normalizedSearch, (item) =>
     [item.name, item.slug, item.state, item.id].join(' '),
   );
-  const scopedClients = filterRecords(applyScope(admin?.clients ?? [], mode, selectedProductId), normalizedSearch, (item) =>
+  const scopedClients = filterRecords(applyScope(admin?.clients ?? [], effectiveMode, selectedProductId), normalizedSearch, (item) =>
     [item.clientId, item.productId, item.clientType, item.allowedRedirectUris?.join(' '), item.allowedScopes?.join(' ')].join(' '),
   );
-  const scopedPolicies = filterRecords(applyScope(admin?.routePolicies ?? [], mode, selectedProductId), normalizedSearch, (item) =>
+  const scopedPolicies = filterRecords(applyScope(admin?.routePolicies ?? [], effectiveMode, selectedProductId), normalizedSearch, (item) =>
     [item.pathPattern, item.productId, item.upstreamUrl, item.methods.join(' '), item.requiredRoles.join(' '), item.state].join(' '),
   );
-  const scopedAssignments = filterRecords(applyScope(admin?.assignments ?? [], mode, selectedWorkspaceId), normalizedSearch, (item) =>
+  const scopedAssignments = filterRecords(applyScope(admin?.assignments ?? [], effectiveMode, selectedWorkspaceId), normalizedSearch, (item) =>
     [item.userId, item.role, item.workspaceId ?? '', item.createdAt].join(' '),
   );
-  const scopedSessions = filterRecords(applyScope(admin?.sessions ?? [], mode, selectedWorkspaceId), normalizedSearch, (item) =>
+  const scopedSessions = filterRecords(applyScope(admin?.sessions ?? [], effectiveMode, selectedWorkspaceId), normalizedSearch, (item) =>
     [item.id, item.subjectId, item.workspaceId, item.expiresAt, item.revokedAt ?? ''].join(' '),
   );
-  const scopedAuditEvents = filterRecords(applyScope(admin?.auditEvents ?? [], mode, selectedWorkspaceId), normalizedSearch, (item) =>
+  const scopedAuditEvents = filterRecords(applyScope(admin?.auditEvents ?? [], effectiveMode, selectedWorkspaceId), normalizedSearch, (item) =>
     [item.actor, item.action, item.entityType, item.entityId, item.description, item.outcome].join(' '),
   );
   const scopedSigningKeys = filterRecords(admin?.signingKeys ?? [], normalizedSearch, (item) =>
     [item.keyId, item.algorithm, item.status, item.createdAt].join(' '),
   );
   const principalRows = buildPrincipalRows(admin?.assignments ?? [], admin?.sessions ?? []);
-  const scopedPrincipals = filterRecords(applyScope(principalRows, mode, selectedWorkspaceId), normalizedSearch, (item) =>
+  const scopedPrincipals = filterRecords(applyScope(principalRows, effectiveMode, selectedWorkspaceId), normalizedSearch, (item) =>
     [item.userId, item.workspaceId ?? '', item.roles.join(' '), item.sessionCount, item.lastSeen ?? ''].join(' '),
   );
   const recentAudit = scopedAuditEvents.slice(0, 6);
   const recentActivity = [...actionLog].slice(0, 6);
+  const authSummary = auth
+    ? `${auth.subjectId} · ${auth.workspaceId} · ${auth.roles.length > 0 ? auth.roles.join(', ') : 'no roles'}`
+    : 'not signed in';
   const paletteActions = buildPaletteActions({
     setPaletteOpen,
     setDrawer,
     setMode,
     setSection,
     reload: loadBootstrap,
-    mode,
+    mode: effectiveMode,
   });
   const filteredPaletteActions = paletteActions.filter((item) =>
     [item.label, item.category, item.description].join(' ').toLowerCase().includes(paletteQuery.trim().toLowerCase()),
   );
+
+  if (!auth) {
+    return (
+      <LoginScreen
+        bootstrap={bootstrap}
+        loading={loading}
+        error={error}
+        authBusy={authBusy}
+        authError={authError}
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        onLogin={() =>
+          void startLogin({
+            bootstrap,
+            loginForm,
+            setAuthBusy,
+            setAuthError,
+          })
+        }
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -291,15 +411,20 @@ export function App() {
 
         <div className="sidebar-section">
           <div className="mode-toggle">
-            <button className={mode === 'admin' ? 'mode-chip active' : 'mode-chip'} type="button" onClick={() => setMode('admin')}>
+            <button
+              className={effectiveMode === 'admin' ? 'mode-chip active' : 'mode-chip'}
+              type="button"
+              onClick={() => setMode('admin')}
+              disabled={!canAccessAdmin}
+            >
               Admin Console
             </button>
-            <button className={mode === 'tenant' ? 'mode-chip active' : 'mode-chip'} type="button" onClick={() => setMode('tenant')}>
+            <button className={effectiveMode === 'tenant' ? 'mode-chip active' : 'mode-chip'} type="button" onClick={() => setMode('tenant')}>
               Tenant Console
             </button>
           </div>
           <p className="sidebar-note">
-            {mode === 'admin'
+            {canAccessAdmin && effectiveMode === 'admin'
               ? 'Platform operators manage the whole registry.'
               : 'Tenant teams only see their scoped product and workspace data.'}
           </p>
@@ -359,6 +484,29 @@ export function App() {
             </button>
           </div>
         </div>
+
+        <div className="sidebar-section auth-summary">
+          <p className="eyebrow">Signed in</p>
+          <strong>{authSummary}</strong>
+          <p className="sidebar-note">
+            {auth?.idToken ? 'OIDC Authorization Code + PKCE completed.' : 'No identity token present.'}
+          </p>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() =>
+              logout({
+                setAuth,
+                setAuthBusy,
+                setAuthError,
+                setMode,
+                setSection,
+              })
+            }
+          >
+            Sign out
+          </button>
+        </div>
       </aside>
 
       <div className="workspace">
@@ -371,7 +519,8 @@ export function App() {
                   {loading ? 'Syncing' : error ? 'Offline' : 'Live'}
                 </StatusPill>
                 <StatusPill tone="neutral">{bootstrap?.runtime.issuer ?? 'Issuer pending'}</StatusPill>
-                <StatusPill tone="muted">{mode === 'admin' ? 'Admin mode' : 'Tenant mode'}</StatusPill>
+                <StatusPill tone="muted">{effectiveMode === 'admin' ? 'Admin mode' : 'Tenant mode'}</StatusPill>
+                <StatusPill tone="neutral">{authSummary}</StatusPill>
               </div>
             </div>
           </div>
@@ -394,14 +543,29 @@ export function App() {
             <button className="secondary-button" type="button" onClick={() => setPaletteOpen(true)}>
               Command palette
             </button>
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() =>
+                logout({
+                  setAuth,
+                  setAuthBusy,
+                  setAuthError,
+                  setMode,
+                  setSection,
+                })
+              }
+            >
+              Sign out
+            </button>
           </div>
         </header>
 
         <main className="content">
           <section className="hero panel">
             <div className="hero-copy">
-              <p className="eyebrow">{mode === 'admin' ? 'Operator console' : 'Tenant console'}</p>
-              <h2>{mode === 'admin' ? 'Operate PubAuth for products, policies, and tenants.' : 'Manage the active product and its tenant-facing auth surface.'}</h2>
+              <p className="eyebrow">{effectiveMode === 'admin' ? 'Operator console' : 'Tenant console'}</p>
+              <h2>{effectiveMode === 'admin' ? 'Operate PubAuth for products, policies, and tenants.' : 'Manage the active product and its tenant-facing auth surface.'}</h2>
               <p className="lede">
                 PubAuth exposes a single React control plane with role-scoped views. The UI stays thin: the API remains the source of truth for
                 OIDC, RBAC, gateway policy, sessions, and signing state.
@@ -1480,6 +1644,159 @@ function CommandPalette({
   );
 }
 
+function LoginScreen({
+  bootstrap,
+  loading,
+  error,
+  authBusy,
+  authError,
+  loginForm,
+  setLoginForm,
+  onLogin,
+}: {
+  bootstrap: BootstrapPayload | null;
+  loading: boolean;
+  error: string | null;
+  authBusy: boolean;
+  authError: string | null;
+  loginForm: LoginFormState;
+  setLoginForm: (updater: LoginFormState | ((current: LoginFormState) => LoginFormState)) => void;
+  onLogin: () => void;
+}) {
+  const workspaces = bootstrap?.admin.workspaces ?? [];
+
+  return (
+    <div className="auth-shell">
+      <section className="auth-panel panel">
+        <div className="brand-block">
+          <div className="brand-mark">P</div>
+          <div>
+            <p className="eyebrow">OIDC login</p>
+            <h1>Sign in to PubAuth</h1>
+          </div>
+        </div>
+
+        <p className="lede">
+          Admin operators and tenant users sign in through the same Authorization Code + PKCE flow. This dev surface uses seeded subjects
+          so you can validate the platform without inventing a separate password system.
+        </p>
+
+        <div className="login-grid">
+          <label>
+            Mode
+            <select
+              value={loginForm.profile}
+              onChange={(event) =>
+                setLoginForm((current) => {
+                  const profile = event.target.value === 'admin' ? 'admin' : 'tenant';
+                  return {
+                    ...current,
+                    profile,
+                    subjectId: profile === 'admin' ? 'admin-user' : 'user-1',
+                  };
+                })
+              }
+            >
+              <option value="admin">Admin operator</option>
+              <option value="tenant">Tenant user</option>
+            </select>
+          </label>
+          <label>
+            Subject ID
+            <input
+              value={loginForm.subjectId}
+              onChange={(event) => setLoginForm((current) => ({ ...current, subjectId: event.target.value }))}
+              placeholder="admin-user"
+            />
+          </label>
+          <label className="wide">
+            Workspace
+            <select
+              value={loginForm.workspaceId}
+              onChange={(event) => setLoginForm((current) => ({ ...current, workspaceId: event.target.value }))}
+            >
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="login-actions">
+          <button className="primary-button" type="button" onClick={onLogin} disabled={authBusy || loading || !bootstrap}>
+            {authBusy ? 'Redirecting to OIDC' : 'Continue with OIDC'}
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() =>
+              setLoginForm({
+                profile: 'admin',
+                subjectId: 'admin-user',
+                workspaceId: workspaces[0]?.id ?? 'workspace-core-platform',
+              })
+            }
+          >
+            Use admin demo
+          </button>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() =>
+              setLoginForm({
+                profile: 'tenant',
+                subjectId: 'user-1',
+                workspaceId: workspaces[0]?.id ?? 'workspace-core-platform',
+              })
+            }
+          >
+            Use tenant demo
+          </button>
+        </div>
+
+        <div className="login-meta">
+          <KeyValueList
+            items={[
+              ['Issuer', bootstrap?.runtime.issuer ?? 'pending'],
+              ['API base', bootstrap?.runtime.apiBase ?? 'pending'],
+              ['Authorize', bootstrap?.discovery.authorization_endpoint ?? 'pending'],
+              ['Token', bootstrap?.discovery.token_endpoint ?? 'pending'],
+            ]}
+          />
+        </div>
+
+        {authError || error ? (
+          <div className="login-error">
+            <strong>{authError ? 'Login failed' : 'Bootstrap error'}</strong>
+            <span>{authError ?? error}</span>
+          </div>
+        ) : null}
+      </section>
+
+      <aside className="auth-panel panel">
+        <SectionHead title="How it works" subtitle="Operator and tenant access" />
+        <ul className="feature-list">
+          <li>Admin operators authenticate as the seeded `admin-user` subject in the core workspace.</li>
+          <li>Product users authenticate with a workspace-scoped subject and receive roles from assignments.</li>
+          <li>OIDC uses the code flow only, with PKCE enforced at the token endpoint.</li>
+          <li>The browser exchanges the callback code through the web proxy, so no CORS hacks are needed.</li>
+        </ul>
+
+        <Card title="Runtime posture" subtitle="Current surface">
+          <div className="stat-grid auth-stat-grid">
+            <StatCard label="Products" value={String(bootstrap?.admin.counts.products ?? 0)} note="Registry entries" />
+            <StatCard label="Workspaces" value={String(bootstrap?.admin.counts.workspaces ?? 0)} note="Tenant scopes" />
+            <StatCard label="Roles" value={String(bootstrap?.admin.counts.roles ?? 0)} note="RBAC catalog" />
+            <StatCard label="Sessions" value={String(bootstrap?.admin.counts.sessions ?? 0)} note="Active browser sessions" />
+          </div>
+        </Card>
+      </aside>
+    </div>
+  );
+}
+
 function getDrawerTitle(drawer: DrawerState): string {
   if (!drawer) {
     return 'Details';
@@ -1643,4 +1960,292 @@ function handleRowKeyDown(event: ReactKeyboardEvent<HTMLTableRowElement>, handle
     event.preventDefault();
     handler();
   }
+}
+
+async function startLogin({
+  bootstrap,
+  loginForm,
+  setAuthBusy,
+  setAuthError,
+}: {
+  bootstrap: BootstrapPayload | null;
+  loginForm: LoginFormState;
+  setAuthBusy: (value: boolean) => void;
+  setAuthError: (value: string | null) => void;
+}) {
+  if (!bootstrap) {
+    setAuthError('bootstrap_not_ready');
+    return;
+  }
+
+  setAuthBusy(true);
+  setAuthError(null);
+
+  try {
+    const codeVerifier = createPkceVerifier();
+    const codeChallenge = await createPkceChallenge(codeVerifier);
+    const state = crypto.randomUUID();
+    const clientId = bootstrap.admin.clients[0]?.clientId ?? 'pubauth-client';
+    const redirectUri = `${window.location.origin}/auth/callback`;
+    const subjectId = loginForm.subjectId.trim() || (loginForm.profile === 'admin' ? 'admin-user' : 'user-1');
+    const workspaceId = loginForm.workspaceId.trim() || (bootstrap.admin.workspaces[0]?.id ?? 'workspace-core-platform');
+    const intent: LoginIntent = {
+      state,
+      codeVerifier,
+      clientId,
+      redirectUri,
+      subjectId,
+      workspaceId,
+      mode: loginForm.profile === 'admin' ? 'admin' : 'tenant',
+    };
+
+    saveLoginIntent(intent);
+
+    const authorizeUrl = new URL(bootstrap.discovery.authorization_endpoint);
+    authorizeUrl.searchParams.set('client_id', clientId);
+    authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    authorizeUrl.searchParams.set('response_type', 'code');
+    authorizeUrl.searchParams.set('scope', 'openid profile email groups');
+    authorizeUrl.searchParams.set('code_challenge', codeChallenge);
+    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+    authorizeUrl.searchParams.set('state', state);
+    authorizeUrl.searchParams.set('subject_id', subjectId);
+    authorizeUrl.searchParams.set('workspace_id', workspaceId);
+
+    window.location.assign(authorizeUrl.toString());
+  } catch (caught) {
+    setAuthBusy(false);
+    setAuthError(caught instanceof Error ? caught.message : 'login_failed');
+  }
+}
+
+async function completeLogin({
+  bootstrap,
+  code,
+  state,
+  setAuth,
+  setAuthBusy,
+  setAuthError,
+  setMode,
+  setSelectedWorkspaceId,
+  setSection,
+}: {
+  bootstrap: BootstrapPayload;
+  code: string;
+  state: string | null;
+  setAuth: (value: AuthState | null) => void;
+  setAuthBusy: (value: boolean) => void;
+  setAuthError: (value: string | null) => void;
+  setMode: (value: ConsoleMode) => void;
+  setSelectedWorkspaceId: (value: string) => void;
+  setSection: (value: SectionId) => void;
+}) {
+  const intent = readLoginIntent();
+  if (!intent) {
+    setAuthError('login_intent_missing');
+    return;
+  }
+
+  if (state && intent.state !== state) {
+    setAuthError('login_state_mismatch');
+    return;
+  }
+
+  setAuthBusy(true);
+  setAuthError(null);
+
+  try {
+    const tokenResponse = await fetch('/api/auth/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        client_id: intent.clientId,
+        redirect_uri: intent.redirectUri,
+        code,
+        code_verifier: intent.codeVerifier,
+      }),
+    });
+
+    const tokenPayload = (await tokenResponse.json()) as {
+      accessToken?: string;
+      idToken?: string;
+      expiresIn?: number;
+      error?: string;
+    };
+
+    if (!tokenResponse.ok || !tokenPayload.accessToken || !tokenPayload.expiresIn) {
+      throw new Error(tokenPayload.error ?? `token_exchange_failed_${tokenResponse.status}`);
+    }
+
+    const userInfoResponse = await fetch('/api/auth/userinfo', {
+      headers: {
+        authorization: `Bearer ${tokenPayload.accessToken}`,
+      },
+    });
+
+    const userInfoPayload = (await userInfoResponse.json()) as {
+      sub?: string;
+      workspace?: string;
+      roles?: unknown;
+      groups?: unknown;
+      error?: string;
+    };
+
+    if (!userInfoResponse.ok || !userInfoPayload.sub) {
+      throw new Error(userInfoPayload.error ?? `userinfo_failed_${userInfoResponse.status}`);
+    }
+
+    const roles = normalizeStringArray(userInfoPayload.roles);
+    const groups = normalizeStringArray(userInfoPayload.groups);
+    const workspaceId = userInfoPayload.workspace ?? intent.workspaceId;
+    const mode = intent.mode === 'admin' && roles.includes('admin') ? 'admin' : 'tenant';
+    const authState: AuthState = {
+      accessToken: tokenPayload.accessToken,
+      idToken: tokenPayload.idToken,
+      subjectId: userInfoPayload.sub,
+      workspaceId,
+      roles,
+      groups,
+      expiresAt: Date.now() + tokenPayload.expiresIn * 1000,
+      mode,
+    };
+
+    saveAuthState(authState);
+    setAuth(authState);
+    setMode(mode);
+    setSelectedWorkspaceId(workspaceId);
+    setSection('overview');
+    clearLoginIntent();
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } catch (caught) {
+    setAuth(null);
+    setAuthError(caught instanceof Error ? caught.message : 'login_failed');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+function logout({
+  setAuth,
+  setAuthBusy,
+  setAuthError,
+  setMode,
+  setSection,
+}: {
+  setAuth: (value: AuthState | null) => void;
+  setAuthBusy: (value: boolean) => void;
+  setAuthError: (value: string | null) => void;
+  setMode: (value: ConsoleMode) => void;
+  setSection: (value: SectionId) => void;
+}) {
+  clearAuthState();
+  clearLoginIntent();
+  setAuth(null);
+  setAuthBusy(false);
+  setAuthError(null);
+  setMode('tenant');
+  setSection('overview');
+  window.history.replaceState({}, document.title, window.location.pathname);
+}
+
+function saveAuthState(value: AuthState) {
+  window.localStorage.setItem(authStorageKey, JSON.stringify(value));
+}
+
+function readStoredAuth(): AuthState | null {
+  const raw = window.localStorage.getItem(authStorageKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as AuthState;
+    if (!parsed || typeof parsed.accessToken !== 'string' || typeof parsed.subjectId !== 'string') {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearAuthState() {
+  window.localStorage.removeItem(authStorageKey);
+}
+
+function saveLoginIntent(value: {
+  state: string;
+  codeVerifier: string;
+  clientId: string;
+  redirectUri: string;
+  subjectId: string;
+  workspaceId: string;
+  mode: ConsoleMode;
+}) {
+  window.sessionStorage.setItem(loginIntentStorageKey, JSON.stringify(value));
+}
+
+function readLoginIntent(): LoginIntent | null {
+  const raw = window.sessionStorage.getItem(loginIntentStorageKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as LoginIntent;
+    if (
+      !parsed ||
+      typeof parsed.state !== 'string' ||
+      typeof parsed.codeVerifier !== 'string' ||
+      typeof parsed.clientId !== 'string' ||
+      typeof parsed.redirectUri !== 'string' ||
+      typeof parsed.subjectId !== 'string' ||
+      typeof parsed.workspaceId !== 'string' ||
+      (parsed.mode !== 'admin' && parsed.mode !== 'tenant')
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearLoginIntent() {
+  window.sessionStorage.removeItem(loginIntentStorageKey);
+}
+
+async function createPkceChallenge(verifier: string): Promise<string> {
+  const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+function createPkceVerifier(): string {
+  const bytes = new Uint8Array(64);
+  window.crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  return [];
 }

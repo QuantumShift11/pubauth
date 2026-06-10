@@ -72,6 +72,16 @@ export function buildWebRoutes(
       handler: async (request) => proxyJson(apiBase, '/admin/assignments', request, fetchImpl),
     },
     {
+      method: 'POST',
+      path: '/api/auth/token',
+      handler: async (request) => proxyJson(apiBase, '/oauth2/token', request, fetchImpl),
+    },
+    {
+      method: 'GET',
+      path: '/api/auth/userinfo',
+      handler: async (request) => proxyJson(apiBase, '/oauth2/userinfo', request, fetchImpl),
+    },
+    {
       method: 'GET',
       path: '/assets/**',
       handler: async (request) => serveAsset(clientRootDir, request.path),

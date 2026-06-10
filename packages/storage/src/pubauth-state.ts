@@ -184,7 +184,15 @@ export function createDefaultPubAuthState(): PubAuthState {
         createdAt: now,
       },
     ],
-    assignments: [],
+    assignments: [
+      {
+        id: 'assignment-admin-user',
+        userId: 'admin-user',
+        role: 'admin',
+        workspaceId: 'workspace-core-platform',
+        createdAt: now,
+      },
+    ],
     authorizationCodes: [],
     accessTokens: [],
     refreshTokens: [],

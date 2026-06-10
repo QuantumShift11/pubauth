@@ -119,6 +119,68 @@ test('web admin proxy forwards json payloads to api', async () => {
   assert.equal(response.body.method, 'POST');
 });
 
+test('web auth proxy forwards oidc token and userinfo requests', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/oauth2/token')) {
+      return jsonResponse({
+        accessToken: 'access.jwt.token',
+        idToken: 'id.jwt.token',
+        tokenType: 'Bearer',
+        expiresIn: 3600,
+        scope: 'openid profile email',
+      });
+    }
+    if (url.endsWith('/oauth2/userinfo')) {
+      return jsonResponse({
+        sub: 'admin-user',
+        workspace: 'workspace-1',
+        roles: ['admin'],
+        groups: [],
+      });
+    }
+    return jsonResponse({ ok: false }, 404);
+  };
+
+  const routes = buildWebRoutes('https://api.example', '/tmp/web', fetchImpl);
+  const tokenRoute = findRoute(routes, 'POST', '/api/auth/token');
+  const userInfoRoute = findRoute(routes, 'GET', '/api/auth/userinfo');
+  assert.ok(tokenRoute);
+  assert.ok(userInfoRoute);
+
+  const tokenResponse = await tokenRoute.handler({
+    method: 'POST',
+    path: '/api/auth/token',
+    query: {},
+    headers: {},
+    body: {
+      grant_type: 'authorization_code',
+      client_id: 'pubauth-client',
+      code: 'code-123',
+      code_verifier: 'verifier-123',
+    },
+  });
+
+  assert.equal(tokenResponse.statusCode, 200);
+  assert.equal(tokenResponse.body.accessToken, 'access.jwt.token');
+
+  const userInfoResponse = await userInfoRoute.handler({
+    method: 'GET',
+    path: '/api/auth/userinfo',
+    query: {},
+    headers: {
+      authorization: 'Bearer access.jwt.token',
+    },
+  });
+
+  assert.equal(userInfoResponse.statusCode, 200);
+  assert.equal(userInfoResponse.body.sub, 'admin-user');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, 'https://api.example/oauth2/token');
+  assert.equal(calls[1].url, 'https://api.example/oauth2/userinfo');
+});
+
 function jsonResponse(body, status = 200) {
   return {
     status,

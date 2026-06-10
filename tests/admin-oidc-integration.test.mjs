@@ -78,7 +78,7 @@ test('admin provisioning persists state and OIDC uses the created client', async
   assert.equal(overviewResponse.body.counts.clients, 2);
   assert.equal(overviewResponse.body.counts.routePolicies, 1);
   assert.equal(overviewResponse.body.counts.roles, 4);
-  assert.equal(overviewResponse.body.counts.assignments, 1);
+  assert.equal(overviewResponse.body.counts.assignments, 2);
 
   const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
   const authResponse = await findRoute(routes, 'GET', '/oauth2/authorize').handler(
