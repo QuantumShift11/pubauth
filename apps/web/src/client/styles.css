@@ -268,7 +268,7 @@ button:hover {
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 18px;
 }
 
@@ -302,6 +302,23 @@ button:hover {
   padding-left: 18px;
   color: var(--text);
   line-height: 1.65;
+}
+
+.inventory-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.compact-group strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.compact-group ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .workspace {

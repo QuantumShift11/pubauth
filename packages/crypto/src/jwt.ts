@@ -1,4 +1,11 @@
-import { createSign, createVerify, generateKeyPairSync, type KeyObject } from 'node:crypto';
+import {
+  createPrivateKey,
+  createPublicKey,
+  createSign,
+  createVerify,
+  generateKeyPairSync,
+  type KeyObject,
+} from 'node:crypto';
 import { base64UrlEncode } from './base64url.js';
 
 export interface PublicJsonWebKey {
@@ -40,16 +47,35 @@ export class RsaJwtSigner implements JwtSigner {
   constructor(
     public readonly keyId: string,
     public readonly issuer: string,
-    private readonly privateKey: KeyObject,
-    private readonly publicKey: KeyObject,
+    private readonly privateKey: KeyObject | string,
+    private readonly publicKey: KeyObject | string,
   ) {}
 
   static generate(issuer: string, keyId = 'dev-rsa-key-1'): RsaJwtSigner {
+    const { signer } = RsaJwtSigner.generateWithMaterial(issuer, keyId);
+    return signer;
+  }
+
+  static generateWithMaterial(issuer: string, keyId = 'dev-rsa-key-1'): {
+    signer: RsaJwtSigner;
+    privateKeyPem: string;
+    publicKeyPem: string;
+  } {
     const { privateKey, publicKey } = generateKeyPairSync('rsa', {
       modulusLength: 2048,
+      publicKeyEncoding: { format: 'pem', type: 'spki' },
+      privateKeyEncoding: { format: 'pem', type: 'pkcs8' },
     });
 
-    return new RsaJwtSigner(keyId, issuer, privateKey, publicKey);
+    return {
+      signer: new RsaJwtSigner(keyId, issuer, privateKey, publicKey),
+      privateKeyPem: privateKey,
+      publicKeyPem: publicKey,
+    };
+  }
+
+  static fromPem(issuer: string, keyId: string, privateKeyPem: string, publicKeyPem: string): RsaJwtSigner {
+    return new RsaJwtSigner(keyId, issuer, privateKeyPem, publicKeyPem);
   }
 
   sign(options: JwtSignOptions): string {
@@ -71,7 +97,7 @@ export class RsaJwtSigner implements JwtSigner {
     const encodedHeader = base64UrlEncode(JSON.stringify(header));
     const encodedPayload = base64UrlEncode(JSON.stringify(payload));
     const signingInput = `${encodedHeader}.${encodedPayload}`;
-    const signature = createSign('RSA-SHA256').update(signingInput).sign(this.privateKey);
+    const signature = createSign('RSA-SHA256').update(signingInput).sign(this.privateKeyObject);
 
     return `${signingInput}.${base64UrlEncode(signature)}`;
   }
@@ -84,7 +110,7 @@ export class RsaJwtSigner implements JwtSigner {
 
     const signingInput = `${encodedHeader}.${encodedPayload}`;
     const signature = Buffer.from(toBase64(encodedSignature), 'base64');
-    const valid = createVerify('RSA-SHA256').update(signingInput).verify(this.publicKey, signature);
+    const valid = createVerify('RSA-SHA256').update(signingInput).verify(this.publicKeyObject, signature);
 
     if (!valid) {
       throw new Error('invalid_token_signature');
@@ -121,7 +147,7 @@ export class RsaJwtSigner implements JwtSigner {
   }
 
   jwks(): { keys: PublicJsonWebKey[] } {
-    const jwk = this.publicKey.export({ format: 'jwk' }) as Record<string, string>;
+    const jwk = this.publicKeyObject.export({ format: 'jwk' }) as Record<string, string>;
     return {
       keys: [
         {
@@ -134,6 +160,14 @@ export class RsaJwtSigner implements JwtSigner {
         },
       ],
     };
+  }
+
+  private get privateKeyObject(): KeyObject {
+    return typeof this.privateKey === 'string' ? createPrivateKey(this.privateKey) : this.privateKey;
+  }
+
+  private get publicKeyObject(): KeyObject {
+    return typeof this.publicKey === 'string' ? createPublicKey(this.publicKey) : this.publicKey;
   }
 }
 

@@ -5,6 +5,15 @@ import type {
   RoutePolicyAdminCommand,
   WorkspaceAdminCommand,
 } from './contracts.js';
+export type { AdminCommandResult } from './contracts.js';
+import type {
+  StoredAssignment,
+  StoredOidcClient,
+  StoredProduct,
+  StoredRoutePolicy,
+  StoredRole,
+  StoredWorkspace,
+} from '../../storage/src/index.js';
 
 export interface ProductAdminService {
   createProduct(command: ProductAdminCommand): Promise<AdminCommandResult>;
@@ -28,6 +37,27 @@ export interface RoleAdminService {
 
 export interface AssignmentAdminService {
   assignRole(userId: string, role: string): Promise<AdminCommandResult>;
+}
+
+export interface AdminOverview {
+  products: StoredProduct[];
+  workspaces: StoredWorkspace[];
+  clients: StoredOidcClient[];
+  routePolicies: StoredRoutePolicy[];
+  roles: StoredRole[];
+  assignments: StoredAssignment[];
+  counts: {
+    products: number;
+    workspaces: number;
+    clients: number;
+    routePolicies: number;
+    roles: number;
+    assignments: number;
+  };
+}
+
+export interface AdminCatalogService {
+  getOverview(): Promise<AdminOverview>;
 }
 
 export class NotImplementedAdminService

@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { sha256Base64Url } from '../dist/packages/crypto/src/index.js';
 import { findRoute } from '../dist/packages/http/src/index.js';
 import { buildApiContext, buildApiRoutes } from '../dist/apps/api/src/routes.js';
@@ -9,12 +12,13 @@ function createRequest(method, path, query = {}, headers = {}, body) {
 }
 
 test('oidc token endpoint issues signed RS256 tokens and jwks exposes only public keys', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-api-'));
   const issuer = 'https://issuer.example';
   const clientId = 'dev-client';
   const redirectUri = 'http://localhost:3000/callback';
   const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
-  const context = buildApiContext(issuer);
-  const routes = buildApiRoutes(issuer, context);
+  const context = await buildApiContext(issuer, dataDir);
+  const routes = await buildApiRoutes(issuer, context);
 
   const authorizeRoute = findRoute(routes, 'GET', '/oauth2/authorize');
   const tokenRoute = findRoute(routes, 'POST', '/oauth2/token');

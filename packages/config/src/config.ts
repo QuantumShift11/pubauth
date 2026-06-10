@@ -4,6 +4,7 @@ export interface AppConfig {
   publicIssuer: string;
   port: number;
   apiBase: string;
+  dataDir: string;
 }
 
 export function loadConfig(serviceName: string): AppConfig {
@@ -13,6 +14,7 @@ export function loadConfig(serviceName: string): AppConfig {
     publicIssuer: process.env.PUBAUTH_ISSUER ?? 'http://localhost:8080',
     port: Number(process.env.PORT ?? '8080'),
     apiBase: process.env.PUBAUTH_API_BASE ?? 'http://localhost:8080',
+    dataDir: process.env.PUBAUTH_DATA_DIR ?? '.pubauth-data',
   };
 }
 

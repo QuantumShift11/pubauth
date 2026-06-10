@@ -9,10 +9,10 @@ interface LogEntry {
 }
 
 const defaultFormState = {
-  productName: 'Atlas',
-  productSlug: 'atlas',
-  workspaceName: 'Core Platform',
-  workspaceSlug: 'core-platform',
+  productName: 'Nebula',
+  productSlug: 'nebula',
+  workspaceName: 'Northstar',
+  workspaceSlug: 'northstar',
   clientProductId: 'product-atlas',
   clientType: 'public',
   clientRedirectUri: 'https://app.example.com/callback',
@@ -77,6 +77,10 @@ export function App() {
   }
 
   const keyCount = bootstrap?.jwks.keys.length ?? 0;
+  const productCount = bootstrap?.admin.counts.products ?? 0;
+  const workspaceCount = bootstrap?.admin.counts.workspaces ?? 0;
+  const clientCount = bootstrap?.admin.counts.clients ?? 0;
+  const policyCount = bootstrap?.admin.counts.routePolicies ?? 0;
 
   return (
     <div className="shell">
@@ -124,6 +128,10 @@ export function App() {
             <Metric label="Issuer" value={bootstrap?.runtime.issuer ?? 'pending'} />
             <Metric label="JWKS keys" value={String(keyCount)} />
             <Metric label="Actions" value={String(actionLog.length)} />
+            <Metric label="Products" value={String(productCount)} />
+            <Metric label="Workspaces" value={String(workspaceCount)} />
+            <Metric label="Clients" value={String(clientCount)} />
+            <Metric label="Policies" value={String(policyCount)} />
           </div>
         </section>
 
@@ -165,9 +173,26 @@ export function App() {
               <ul className="feature-list">
                 <li>OIDC code + PKCE flow is signed with RS256.</li>
                 <li>JWKS only exposes public keys.</li>
-                <li>Admin endpoints are wired, persistence remains placeholder-backed.</li>
-                <li>UI is new and browser-ready, not a mock page.</li>
+                <li>Admin state is persisted to the API data directory.</li>
+                <li>UI is wired to live API and admin overview data.</li>
               </ul>
+            }
+          />
+
+          <InfoCard
+            title="Managed inventory"
+            subtitle="Live objects"
+            body={
+              bootstrap ? (
+                <div className="inventory-stack">
+                  <CompactGroup label="Products" items={bootstrap.admin.products.map((item) => `${item.name} (${item.slug})`)} />
+                  <CompactGroup label="Workspaces" items={bootstrap.admin.workspaces.map((item) => `${item.name} (${item.slug})`)} />
+                  <CompactGroup label="Clients" items={bootstrap.admin.clients.map((item) => `${item.clientId} / ${item.productId}`)} />
+                  <CompactGroup label="Policies" items={bootstrap.admin.routePolicies.map((item) => `${item.pathPattern} [${item.methods.join(', ')}]`)} />
+                </div>
+              ) : (
+                <SkeletonBlock />
+              )
             }
           />
         </section>
@@ -390,5 +415,22 @@ function ActivityItem({ entry }: { entry: LogEntry }) {
       <strong>{entry.title}</strong>
       <pre>{JSON.stringify(entry.body, null, 2)}</pre>
     </article>
+  );
+}
+
+function CompactGroup({ label, items }: { label: string; items: string[] }) {
+  return (
+    <div className="compact-group">
+      <strong>{label}</strong>
+      {items.length > 0 ? (
+        <ul>
+          {items.slice(0, 3).map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <span>None yet</span>
+      )}
+    </div>
   );
 }

@@ -5,9 +5,12 @@ services:
     environment:
       PUBAUTH_ENV: local
       PUBAUTH_ISSUER: http://localhost:8080
+      PUBAUTH_DATA_DIR: /app/.pubauth-data
       PORT: 8080
     ports:
       - "8080:8080"
+    volumes:
+      - pubauth-data:/app/.pubauth-data
 
   web:
     build: .
@@ -38,4 +41,12 @@ services:
     environment:
       PUBAUTH_ENV: local
       PUBAUTH_ISSUER: http://localhost:8080
+      PUBAUTH_DATA_DIR: /app/.pubauth-data
       PORT: 8082
+    volumes:
+      - pubauth-data:/app/.pubauth-data
+    ports:
+      - "8082:8082"
+
+volumes:
+  pubauth-data:

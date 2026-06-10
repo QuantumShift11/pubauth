@@ -98,4 +98,4 @@ docker compose up --build
 
 ## Current status
 
-This repo now includes a React control-plane UI, signed RS256 OIDC issuance, JWKS exposure, and wired admin proxy endpoints. Durable storage, provider adapters, and full admin persistence are still placeholder-backed.
+This repo now includes a React control-plane UI, signed RS256 OIDC issuance, JWKS exposure, and persisted admin state backed by a Docker volume. Provider adapters and some lower-level storage adapters remain scaffolding for future expansion.

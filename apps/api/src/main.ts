@@ -6,10 +6,11 @@ import { buildApiRoutes } from './routes.js';
 export async function startApiService(): Promise<void> {
   const config = loadConfig('api');
   const logger = createLogger('api');
+  const routes = await buildApiRoutes(config.publicIssuer, config.dataDir);
 
   startNodeServer({
     port: config.port,
-    routes: buildApiRoutes(config.publicIssuer),
+    routes,
   });
 
   logger.info('api_service_started', {

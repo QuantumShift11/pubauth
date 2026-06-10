@@ -28,6 +28,16 @@ interface JwksPayload {
   }>;
 }
 
+interface AdminOverviewPayload {
+  products: Array<{ id: string; name: string; slug: string; environment: string; status: string }>;
+  workspaces: Array<{ id: string; name: string; slug: string; state: string }>;
+  clients: Array<{ id: string; clientId: string; productId: string; clientType: string; isActive: boolean }>;
+  routePolicies: Array<{ id: string; productId: string; pathPattern: string; methods: string[]; requiredRoles: string[] }>;
+  roles: Array<{ id: string; name: string }>;
+  assignments: Array<{ id: string; userId: string; role: string }>;
+  counts: Record<string, number>;
+}
+
 export async function startWebService(): Promise<void> {
   const config = loadConfig('web');
 
@@ -90,10 +100,11 @@ export function buildWebRoutes(
 }
 
 async function buildBootstrap(apiBase: string, fetchImpl: typeof fetch) {
-  const [healthResponse, discoveryResponse, jwksResponse] = await Promise.all([
+  const [healthResponse, discoveryResponse, jwksResponse, adminResponse] = await Promise.all([
     fetchJson<HealthPayload>(`${apiBase}/health`, fetchImpl),
     fetchJson<DiscoveryPayload>(`${apiBase}/.well-known/openid-configuration`, fetchImpl),
     fetchJson<JwksPayload>(`${apiBase}/oauth2/jwks`, fetchImpl),
+    fetchJson<AdminOverviewPayload>(`${apiBase}/admin/overview`, fetchImpl),
   ]);
 
   return {
@@ -103,6 +114,7 @@ async function buildBootstrap(apiBase: string, fetchImpl: typeof fetch) {
     },
     discovery: discoveryResponse.body,
     jwks: jwksResponse.body,
+    admin: adminResponse.body,
     runtime: {
       issuer: discoveryResponse.body.issuer,
       apiBase,

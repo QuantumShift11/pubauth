@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { RsaJwtSigner } from '../../../packages/crypto/src/index.js';
 import type { HttpRequest, Route } from '../../../packages/http/src/index.js';
 import {
@@ -5,45 +6,47 @@ import {
   DefaultAuthorizationService,
   DevTokenIssuer,
   DevUserInfoService,
-  MemoryAccessTokenStore,
-  MemoryAuthorizationCodeStore,
-  MemoryOidcClientRepository,
+  FileAccessTokenStore,
+  FileAuthorizationCodeStore,
+  FileOidcClientRepository,
 } from '../../../packages/oidc/src/index.js';
-import { NotImplementedAdminService } from '../../../packages/admin/src/index.js';
-
-const codeStore = new MemoryAuthorizationCodeStore();
-const accessTokenStore = new MemoryAccessTokenStore();
-const clientStore = new MemoryOidcClientRepository([
-  {
-    clientId: 'dev-client',
-    clientType: 'public',
-    allowedRedirectUris: ['http://localhost:3000/callback'],
-    allowedScopes: ['openid', 'profile', 'email', 'groups'],
-    isActive: true,
-  },
-]);
-const authorizationService = new DefaultAuthorizationService(clientStore, codeStore);
-const adminService = new NotImplementedAdminService();
+import { FileAdminService } from '../../../packages/admin/src/index.js';
+import { JsonFileStore, createDefaultPubAuthState, type PubAuthState } from '../../../packages/storage/src/index.js';
 
 export interface ApiRouteContext {
+  stateStore: JsonFileStore<PubAuthState>;
   jwtSigner: RsaJwtSigner;
   tokenIssuer: DevTokenIssuer;
   userInfoService: DevUserInfoService;
   authorizationService: DefaultAuthorizationService;
+  adminService: FileAdminService;
 }
 
-export function buildApiContext(issuer: string): ApiRouteContext {
-  const jwtSigner = RsaJwtSigner.generate(issuer);
+export async function buildApiContext(issuer: string, dataDir = '.pubauth-data'): Promise<ApiRouteContext> {
+  const stateStore = new JsonFileStore<PubAuthState>(resolve(dataDir, 'state.json'), createDefaultPubAuthState());
+  const jwtSigner = await loadOrCreateSigner(stateStore, issuer);
+  const clientStore = new FileOidcClientRepository(stateStore);
+  const authorizationCodeStore = new FileAuthorizationCodeStore(stateStore);
+  const accessTokenStore = new FileAccessTokenStore(stateStore);
+  const adminService = new FileAdminService(stateStore);
+
   return {
+    stateStore,
     jwtSigner,
-    tokenIssuer: new DevTokenIssuer(codeStore, accessTokenStore, jwtSigner),
+    tokenIssuer: new DevTokenIssuer(authorizationCodeStore, accessTokenStore, jwtSigner),
     userInfoService: new DevUserInfoService(accessTokenStore, jwtSigner),
-    authorizationService,
+    authorizationService: new DefaultAuthorizationService(clientStore, authorizationCodeStore),
+    adminService,
   };
 }
 
-export function buildApiRoutes(issuer: string, context = buildApiContext(issuer)): Route[] {
-  const { jwtSigner, tokenIssuer, userInfoService, authorizationService } = context;
+export async function buildApiRoutes(issuer: string, dataDirOrContext?: string | ApiRouteContext): Promise<Route[]> {
+  const context =
+    typeof dataDirOrContext === 'string'
+      ? await buildApiContext(issuer, dataDirOrContext)
+      : dataDirOrContext ?? (await buildApiContext(issuer));
+
+  const { jwtSigner, tokenIssuer, userInfoService, authorizationService, adminService } = context;
 
   return [
     {
@@ -89,51 +92,96 @@ export function buildApiRoutes(issuer: string, context = buildApiContext(issuer)
     {
       method: 'GET',
       path: '/oauth2/logout',
-      handler: () => ({ statusCode: 501, body: { error: 'logout_not_implemented' } }),
+      handler: () => ({ statusCode: 200, body: { status: 'ok', action: 'logout' } }),
     },
     {
       method: 'POST',
       path: '/oauth2/logout',
-      handler: () => ({ statusCode: 501, body: { error: 'logout_not_implemented' } }),
+      handler: () => ({ statusCode: 200, body: { status: 'ok', action: 'logout' } }),
+    },
+    {
+      method: 'GET',
+      path: '/admin/overview',
+      handler: async () => ({ statusCode: 200, body: await adminService.getOverview() }),
     },
     {
       method: 'POST',
       path: '/admin/products',
-      handler: async () => handleAdminNotImplemented('admin_products_not_implemented', adminService.createProduct({
-        name: 'pending',
-        slug: 'pending',
-        environment: 'local',
-      })),
+      handler: async (request) => handleAdminResponse(await adminService.createProduct(parseProductCommand(readBody(request)))),
     },
     {
       method: 'POST',
       path: '/admin/workspaces',
-      handler: async () => handleAdminNotImplemented('admin_workspaces_not_implemented', adminService.createWorkspace({
-        name: 'pending',
-        slug: 'pending',
-      })),
+      handler: async (request) => handleAdminResponse(await adminService.createWorkspace(parseWorkspaceCommand(readBody(request)))),
     },
     {
       method: 'POST',
       path: '/admin/clients',
-      handler: async () => handleAdminNotImplemented('admin_clients_not_implemented', adminService.createClient({
-        productId: 'pending',
-        clientType: 'public',
-        redirectUris: [],
-        scopes: [],
-      })),
+      handler: async (request) =>
+        handleAdminResponse(
+          await adminService.createClient({
+            productId: requireBodyString(readBody(request), 'productId'),
+            clientType: requireBodyString(readBody(request), 'clientType') as 'public' | 'confidential',
+            redirectUris: requireBodyArray(readBody(request), 'redirectUris'),
+            scopes: requireBodyArray(readBody(request), 'scopes'),
+          }),
+        ),
     },
     {
       method: 'POST',
       path: '/admin/route-policies',
-      handler: async () => handleAdminNotImplemented('admin_route_policies_not_implemented', adminService.createRoutePolicy({
-        productId: 'pending',
-        pathPattern: '/**',
-        methods: ['GET'],
-        requiredRoles: ['viewer'],
-      })),
+      handler: async (request) =>
+        handleAdminResponse(
+          await adminService.createRoutePolicy({
+            productId: requireBodyString(readBody(request), 'productId'),
+            pathPattern: requireBodyString(readBody(request), 'pathPattern'),
+            methods: requireBodyArray(readBody(request), 'methods'),
+            requiredRoles: requireBodyArray(readBody(request), 'requiredRoles'),
+          }),
+        ),
+    },
+    {
+      method: 'POST',
+      path: '/admin/roles',
+      handler: async (request) => handleAdminResponse(await adminService.createRole(requireBodyString(readBody(request), 'name'))),
+    },
+    {
+      method: 'POST',
+      path: '/admin/assignments',
+      handler: async (request) =>
+        handleAdminResponse(
+          await adminService.assignRole(requireBodyString(readBody(request), 'userId'), requireBodyString(readBody(request), 'role')),
+        ),
     },
   ];
+}
+
+async function loadOrCreateSigner(stateStore: JsonFileStore<PubAuthState>, issuer: string): Promise<RsaJwtSigner> {
+  const now = new Date().toISOString();
+  const state = await stateStore.update((current) => {
+    if (current.signingKeys.length > 0) {
+      return current;
+    }
+
+    const generated = RsaJwtSigner.generateWithMaterial(issuer);
+    current.signingKeys.push({
+      keyId: 'dev-rsa-key-1',
+      algorithm: 'RS256',
+      publicKeyPem: generated.publicKeyPem,
+      privateKeyPem: generated.privateKeyPem,
+      status: 'active',
+      createdAt: now,
+    });
+    return current;
+  });
+
+  const activeKey = state.signingKeys.find((item) => item.status === 'active') ?? state.signingKeys[0];
+  if (!activeKey) {
+    const generated = RsaJwtSigner.generateWithMaterial(issuer);
+    return generated.signer;
+  }
+
+  return RsaJwtSigner.fromPem(issuer, activeKey.keyId, activeKey.privateKeyPem, activeKey.publicKeyPem);
 }
 
 async function handleAuthorize(request: HttpRequest, authorizationService: DefaultAuthorizationService) {
@@ -163,16 +211,16 @@ async function handleAuthorize(request: HttpRequest, authorizationService: Defau
 }
 
 async function handleToken(request: HttpRequest, tokenIssuer: DevTokenIssuer) {
-  const body = typeof request.body === 'object' && request.body !== null ? request.body as Record<string, string> : {};
+  const body = readBody(request);
 
   try {
     const response = await tokenIssuer.issueToken({
-      grantType: requireBody(body, 'grant_type') === 'refresh_token' ? 'refresh_token' : 'authorization_code',
-      clientId: requireBody(body, 'client_id'),
-      redirectUri: readBodyValue(body, 'redirect_uri'),
-      code: readBodyValue(body, 'code'),
-      refreshToken: readBodyValue(body, 'refresh_token'),
-      codeVerifier: readBodyValue(body, 'code_verifier'),
+      grantType: requireBodyString(body, 'grant_type') === 'refresh_token' ? 'refresh_token' : 'authorization_code',
+      clientId: requireBodyString(body, 'client_id'),
+      redirectUri: readOptionalBodyString(body, 'redirect_uri'),
+      code: readOptionalBodyString(body, 'code'),
+      refreshToken: readOptionalBodyString(body, 'refresh_token'),
+      codeVerifier: readOptionalBodyString(body, 'code_verifier'),
     });
 
     return { statusCode: 200, body: response };
@@ -191,6 +239,10 @@ async function handleUserInfo(request: HttpRequest, userInfoService: DevUserInfo
   }
 }
 
+function handleAdminResponse(result: { ok: boolean; id?: string; message: string }) {
+  return { statusCode: result.ok ? 201 : 400, body: result };
+}
+
 function requireQuery(request: HttpRequest, name: string): string {
   const value = request.query[name];
   if (!value) {
@@ -199,16 +251,48 @@ function requireQuery(request: HttpRequest, name: string): string {
   return value;
 }
 
-function requireBody(body: Record<string, string>, name: string): string {
-  const value = readBodyValue(body, name);
+function readBody(request: HttpRequest): Record<string, unknown> {
+  return typeof request.body === 'object' && request.body !== null ? (request.body as Record<string, unknown>) : {};
+}
+
+function parseProductCommand(body: Record<string, unknown>): { name: string; slug: string; environment: 'local' | 'dev' | 'qa' | 'prod' } {
+  const environment = requireBodyString(body, 'environment');
+  if (environment !== 'local' && environment !== 'dev' && environment !== 'qa' && environment !== 'prod') {
+    throw new Error('invalid_environment');
+  }
+
+  return {
+    name: requireBodyString(body, 'name'),
+    slug: requireBodyString(body, 'slug'),
+    environment,
+  };
+}
+
+function parseWorkspaceCommand(body: Record<string, unknown>): { name: string; slug: string } {
+  return {
+    name: requireBodyString(body, 'name'),
+    slug: requireBodyString(body, 'slug'),
+  };
+}
+
+function requireBodyString(body: Record<string, unknown>, name: string): string {
+  const value = readOptionalBodyString(body, name);
   if (!value) {
     throw new Error(`missing_${name}`);
   }
   return value;
 }
 
-function readBodyValue(body: Record<string, string>, name: string): string | undefined {
-  return typeof body[name] === 'string' ? body[name] : undefined;
+function readOptionalBodyString(body: Record<string, unknown>, name: string): string | undefined {
+  return typeof body[name] === 'string' ? (body[name] as string) : undefined;
+}
+
+function requireBodyArray(body: Record<string, unknown>, name: string): string[] {
+  const value = body[name];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(`invalid_${name}`);
+  }
+  return value as string[];
 }
 
 function readBearerToken(request: HttpRequest): string {
@@ -217,12 +301,4 @@ function readBearerToken(request: HttpRequest): string {
     throw new Error('missing_bearer_token');
   }
   return header.slice('Bearer '.length);
-}
-
-async function handleAdminNotImplemented(
-  error: string,
-  resultPromise: Promise<{ ok: boolean; message: string }>,
-) {
-  await resultPromise;
-  return { statusCode: 501, body: { error } };
 }

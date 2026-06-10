@@ -79,4 +79,4 @@ Services:
 
 This repository has the modular skeleton and protocol contracts.
 
-Some endpoints intentionally return `501` until the real OIDC flow, storage, and provider adapters are implemented.
+The core OIDC, admin, and control-plane endpoints are wired. Some lower-level repository adapters remain scaffolding for future external database integration.
