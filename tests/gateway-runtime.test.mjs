@@ -204,6 +204,233 @@ test('gateway runtime proxies trusted requests and denies unknown routes', async
   }
 });
 
+test('gateway cookie session only works when PUBAUTH_GATEWAY_SESSION_MODE=enabled', async () => {
+  const previousSessionMode = process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+  delete process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+  const upstream = await startUpstreamServer();
+  const issuer = 'https://issuer.example';
+  const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-gateway-'));
+  const now = new Date().toISOString();
+  const stateStore = new JsonFileStore(join(dataDir, 'state.json'), createDefaultPubAuthState());
+  const generated = RsaJwtSigner.generateWithMaterial(issuer, 'gateway-key-1');
+
+  try {
+    await stateStore.replace({
+      ...createDefaultPubAuthState(),
+      products: [
+        {
+          id: 'product-1',
+          name: 'Atlas',
+          slug: 'atlas',
+          environment: 'local',
+          status: 'active',
+          createdAt: now,
+        },
+      ],
+      workspaces: [
+        {
+          id: 'workspace-1',
+          name: 'Core',
+          slug: 'core',
+          state: 'active',
+          createdAt: now,
+        },
+      ],
+      clients: [],
+      routePolicies: [
+        {
+          id: 'policy-1',
+          productId: 'product-1',
+          upstreamUrl: upstream.url,
+          pathPattern: '/reports/**',
+          methods: ['GET'],
+          requiredRoles: ['viewer'],
+          priority: 100,
+          state: 'active',
+          createdAt: now,
+        },
+      ],
+      roles: [{ id: 'role-viewer', name: 'viewer', createdAt: now }],
+      assignments: [
+        {
+          id: 'assignment-1',
+          userId: 'user-1',
+          role: 'viewer',
+          workspaceId: 'workspace-1',
+          createdAt: now,
+        },
+      ],
+      authorizationCodes: [],
+      accessTokens: [],
+      sessions: [
+        {
+          id: 'session-1',
+          subjectId: 'user-1',
+          workspaceId: 'workspace-1',
+          createdAt: now,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      ],
+      signingKeys: [
+        {
+          keyId: generated.signer.keyId,
+          algorithm: 'RS256',
+          publicKeyPem: generated.publicKeyPem,
+          privateKeyPem: generated.privateKeyPem,
+          status: 'active',
+          createdAt: now,
+        },
+      ],
+    });
+
+    const routes = await buildGatewayRoutes(issuer, dataDir);
+    const proxyRoute = findRoute(routes, 'GET', '/reports/summary');
+    assert.ok(proxyRoute);
+
+    const disabledResponse = await proxyRoute.handler({
+      method: 'GET',
+      path: '/reports/summary',
+      query: {},
+      headers: {
+        cookie: 'pubauth_session=session-1',
+      },
+    });
+    assert.equal(disabledResponse.statusCode, 403);
+    assert.equal(disabledResponse.body.error, 'missing_credential');
+  } finally {
+    if (previousSessionMode === undefined) {
+      delete process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+    } else {
+      process.env.PUBAUTH_GATEWAY_SESSION_MODE = previousSessionMode;
+    }
+    await closeServer(upstream.server);
+  }
+});
+
+test('gateway rejects token when jti does not match persisted metadata', async () => {
+  const previousSessionMode = process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+  delete process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+  const upstream = await startUpstreamServer();
+  const issuer = 'https://issuer.example';
+  const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-gateway-'));
+  const now = new Date().toISOString();
+  const stateStore = new JsonFileStore(join(dataDir, 'state.json'), createDefaultPubAuthState());
+  const generated = RsaJwtSigner.generateWithMaterial(issuer, 'gateway-key-1');
+
+  try {
+    await stateStore.replace({
+      ...createDefaultPubAuthState(),
+      products: [
+        {
+          id: 'product-1',
+          name: 'Atlas',
+          slug: 'atlas',
+          environment: 'local',
+          status: 'active',
+          createdAt: now,
+        },
+      ],
+      workspaces: [
+        {
+          id: 'workspace-1',
+          name: 'Core',
+          slug: 'core',
+          state: 'active',
+          createdAt: now,
+        },
+      ],
+      clients: [],
+      routePolicies: [
+        {
+          id: 'policy-1',
+          productId: 'product-1',
+          upstreamUrl: upstream.url,
+          pathPattern: '/reports/**',
+          methods: ['GET'],
+          requiredRoles: ['viewer'],
+          priority: 100,
+          state: 'active',
+          createdAt: now,
+        },
+      ],
+      roles: [{ id: 'role-viewer', name: 'viewer', createdAt: now }],
+      assignments: [
+        {
+          id: 'assignment-1',
+          userId: 'user-1',
+          role: 'viewer',
+          workspaceId: 'workspace-1',
+          createdAt: now,
+        },
+      ],
+      authorizationCodes: [],
+      accessTokens: [],
+      sessions: [],
+      signingKeys: [
+        {
+          keyId: generated.signer.keyId,
+          algorithm: 'RS256',
+          publicKeyPem: generated.publicKeyPem,
+          privateKeyPem: generated.privateKeyPem,
+          status: 'active',
+          createdAt: now,
+        },
+      ],
+    });
+
+    const routes = await buildGatewayRoutes(issuer, dataDir);
+    const proxyRoute = findRoute(routes, 'GET', '/reports/summary');
+    assert.ok(proxyRoute);
+
+    const bearerToken = generated.signer.sign({
+      audience: 'client-1',
+      subject: 'user-1',
+      expiresInSeconds: 3600,
+      claims: {
+        token_use: 'access_token',
+        client_id: 'client-1',
+        workspace_id: 'workspace-1',
+        jti: 'jwt-jti',
+        roles: ['viewer'],
+        groups: [],
+      },
+    });
+
+    await stateStore.update((state) => ({
+      ...state,
+      accessTokens: [
+        {
+          accessToken: bearerToken,
+          jti: 'persisted-other-jti',
+          subjectId: 'user-1',
+          clientId: 'client-1',
+          workspaceId: 'workspace-1',
+          scopes: ['openid'],
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      ],
+    }));
+
+    const response = await proxyRoute.handler({
+      method: 'GET',
+      path: '/reports/summary',
+      query: {},
+      headers: {
+        authorization: `Bearer ${bearerToken}`,
+      },
+    });
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, 'invalid_credential');
+  } finally {
+    if (previousSessionMode === undefined) {
+      delete process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+    } else {
+      process.env.PUBAUTH_GATEWAY_SESSION_MODE = previousSessionMode;
+    }
+    await closeServer(upstream.server);
+  }
+});
+
 async function startUpstreamServer() {
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');

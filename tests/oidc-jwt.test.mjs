@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPublicKey, createVerify } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sha256Base64Url } from '../dist/packages/crypto/src/index.js';
@@ -437,6 +437,144 @@ test('refresh token rotation revokes the family on replay reuse', async () => {
   );
   assert.equal(descendantUseAfterReplay.statusCode, 400);
   assert.equal(descendantUseAfterReplay.body.error, 'invalid_grant');
+});
+
+test('userinfo rejects token when persisted access-token metadata is missing', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-api-'));
+  const issuer = 'https://issuer.example';
+  const clientId = 'pubauth-client';
+  const redirectUri = 'http://localhost:3000/callback';
+  const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
+  const context = await buildApiContext(issuer, dataDir);
+  const routes = await buildApiRoutes(issuer, context);
+  const loginRoute = findRoute(routes, 'POST', '/auth/login');
+  const authorizeRoute = findRoute(routes, 'GET', '/oauth2/authorize');
+  const tokenRoute = findRoute(routes, 'POST', '/oauth2/token');
+  const userinfoRoute = findRoute(routes, 'GET', '/oauth2/userinfo');
+  assert.ok(loginRoute);
+  assert.ok(authorizeRoute);
+  assert.ok(tokenRoute);
+  assert.ok(userinfoRoute);
+
+  const sessionResponse = await loginRoute.handler(
+    createRequest('POST', '/auth/login', {}, {}, {
+      username: 'user@atlas.local',
+      password: 'ChangeMe-User!1',
+    }),
+  );
+  const cookie = sessionResponse.headers?.['set-cookie'];
+
+  const authorizeResponse = await authorizeRoute.handler(
+    createRequest(
+      'GET',
+      '/oauth2/authorize',
+      {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid profile email',
+        code_challenge: sha256Base64Url(verifier),
+        code_challenge_method: 'S256',
+      },
+      { cookie },
+    ),
+  );
+  const code = new URL(authorizeResponse.body.redirect).searchParams.get('code');
+  assert.ok(code);
+
+  const tokenResponse = await tokenRoute.handler(
+    createRequest('POST', '/oauth2/token', {}, {}, {
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      code,
+      code_verifier: verifier,
+    }),
+  );
+  const accessToken = tokenResponse.body.accessToken;
+  assert.ok(accessToken);
+
+  const statePath = join(dataDir, 'state.json');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  state.accessTokens = [];
+  writeFileSync(statePath, JSON.stringify(state, null, 2));
+
+  const userinfoResponse = await userinfoRoute.handler(
+    createRequest('GET', '/oauth2/userinfo', {}, { authorization: `Bearer ${accessToken}` }),
+  );
+  assert.equal(userinfoResponse.statusCode, 401);
+  assert.equal(userinfoResponse.body.error, 'invalid_token');
+});
+
+test('userinfo rejects token when session is revoked', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-api-'));
+  const issuer = 'https://issuer.example';
+  const clientId = 'pubauth-client';
+  const redirectUri = 'http://localhost:3000/callback';
+  const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc';
+  const context = await buildApiContext(issuer, dataDir);
+  const routes = await buildApiRoutes(issuer, context);
+  const loginRoute = findRoute(routes, 'POST', '/auth/login');
+  const authorizeRoute = findRoute(routes, 'GET', '/oauth2/authorize');
+  const tokenRoute = findRoute(routes, 'POST', '/oauth2/token');
+  const userinfoRoute = findRoute(routes, 'GET', '/oauth2/userinfo');
+  assert.ok(loginRoute);
+  assert.ok(authorizeRoute);
+  assert.ok(tokenRoute);
+  assert.ok(userinfoRoute);
+
+  const sessionResponse = await loginRoute.handler(
+    createRequest('POST', '/auth/login', {}, {}, {
+      username: 'user@atlas.local',
+      password: 'ChangeMe-User!1',
+    }),
+  );
+  const cookie = sessionResponse.headers?.['set-cookie'];
+
+  const authorizeResponse = await authorizeRoute.handler(
+    createRequest(
+      'GET',
+      '/oauth2/authorize',
+      {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid profile email',
+        code_challenge: sha256Base64Url(verifier),
+        code_challenge_method: 'S256',
+      },
+      { cookie },
+    ),
+  );
+  const code = new URL(authorizeResponse.body.redirect).searchParams.get('code');
+  assert.ok(code);
+
+  const tokenResponse = await tokenRoute.handler(
+    createRequest('POST', '/oauth2/token', {}, {}, {
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      code,
+      code_verifier: verifier,
+    }),
+  );
+  const accessToken = tokenResponse.body.accessToken;
+  assert.ok(accessToken);
+
+  const statePath = join(dataDir, 'state.json');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  const tokenRecord = state.accessTokens.find((item) => item.accessToken === accessToken);
+  assert.ok(tokenRecord?.sessionId);
+  state.sessions = state.sessions.map((item) =>
+    item.id === tokenRecord.sessionId ? { ...item, revokedAt: new Date().toISOString() } : item,
+  );
+  writeFileSync(statePath, JSON.stringify(state, null, 2));
+
+  const userinfoResponse = await userinfoRoute.handler(
+    createRequest('GET', '/oauth2/userinfo', {}, { authorization: `Bearer ${accessToken}` }),
+  );
+  assert.equal(userinfoResponse.statusCode, 401);
+  assert.equal(userinfoResponse.body.error, 'invalid_token');
 });
 
 function verifyJwtWithJwk(token, jwk) {
