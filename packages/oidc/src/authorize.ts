@@ -11,6 +11,7 @@ export interface AuthorizationRequest {
 export interface AuthenticatedAuthorizationRequest extends AuthorizationRequest {
   subjectId: string;
   workspaceId: string;
+  sessionId?: string;
 }
 
 export interface AuthorizationResponse {

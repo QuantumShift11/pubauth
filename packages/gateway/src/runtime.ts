@@ -25,6 +25,8 @@ export async function buildGatewayProxyRoutes(options: GatewayRuntimeOptions): P
   assertBootstrapAccountPolicy(await store.read(), readPubAuthEnvironment());
   const signer = await createSigningKeyService(new FileSigningKeyRepository(store), options.issuer);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const sessionModeEnabled = process.env.PUBAUTH_GATEWAY_SESSION_MODE === 'enabled';
+  const sessionCookieName = 'pubauth_session';
 
   return [
     {
@@ -35,27 +37,27 @@ export async function buildGatewayProxyRoutes(options: GatewayRuntimeOptions): P
     {
       method: 'GET',
       path: '/**',
-      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl),
+      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl, sessionModeEnabled, sessionCookieName),
     },
     {
       method: 'POST',
       path: '/**',
-      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl),
+      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl, sessionModeEnabled, sessionCookieName),
     },
     {
       method: 'PUT',
       path: '/**',
-      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl),
+      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl, sessionModeEnabled, sessionCookieName),
     },
     {
       method: 'PATCH',
       path: '/**',
-      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl),
+      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl, sessionModeEnabled, sessionCookieName),
     },
     {
       method: 'DELETE',
       path: '/**',
-      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl),
+      handler: async (request) => handleGatewayRequest(request, store, signer, fetchImpl, sessionModeEnabled, sessionCookieName),
     },
   ];
 }
@@ -65,6 +67,8 @@ async function handleGatewayRequest(
   store: JsonFileStore<PubAuthState>,
   signer: SigningKeyService,
   fetchImpl: typeof fetch,
+  sessionModeEnabled: boolean,
+  sessionCookieName: string,
 ): Promise<HttpResponse> {
   if (request.path.startsWith('/_pubauth/')) {
     return { statusCode: 404, body: { error: 'not_found' } };
@@ -89,6 +93,7 @@ async function handleGatewayRequest(
       requiredRoles: rule.requiredRoles,
     })),
     verifier,
+    { sessionModeEnabled, sessionCookieName },
   );
 
   if (!decision.allowed || !decision.upstream) {
@@ -142,6 +147,26 @@ function createCredentialVerifier(
         }
 
         const state = await store.read();
+        const tokenRecord = state.accessTokens.find((item) => item.accessToken === token) ?? null;
+        if (!tokenRecord || tokenRecord.revokedAt || new Date(tokenRecord.expiresAt).getTime() <= Date.now()) {
+          return null;
+        }
+
+        if (typeof verified.payload.jti !== 'string' || verified.payload.jti !== tokenRecord.jti) {
+          return null;
+        }
+
+        if (tokenRecord.sessionId) {
+          const session = state.sessions.find((item) => item.id === tokenRecord.sessionId) ?? null;
+          if (!session || session.revokedAt || new Date(session.expiresAt).getTime() <= Date.now()) {
+            return null;
+          }
+
+          if (verified.payload.sid !== tokenRecord.sessionId) {
+            return null;
+          }
+        }
+
         return {
           userId: subjectId,
           workspaceId,

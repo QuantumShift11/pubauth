@@ -3,6 +3,7 @@ export interface AuthorizationCode {
   clientId: string;
   subjectId: string;
   workspaceId: string;
+  sessionId?: string;
   redirectUri: string;
   scopes: string[];
   codeChallenge: string;

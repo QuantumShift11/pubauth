@@ -372,16 +372,18 @@ export class FileAccessTokenRepository implements AccessTokenRepository<StoredAc
   async find(accessToken: string, now = new Date()): Promise<StoredAccessToken | null> {
     const state = await this.store.read();
     const token = state.accessTokens.find((item) => item.accessToken === accessToken) ?? null;
-    if (!token || !isTimeInFuture(token.expiresAt, now)) {
+    if (!token || token.revokedAt || !isTimeInFuture(token.expiresAt, now)) {
       return null;
     }
     return token;
   }
 
-  async revoke(accessToken: string): Promise<void> {
+  async revoke(accessToken: string, now = new Date()): Promise<void> {
     await this.store.update((state) => ({
       ...state,
-      accessTokens: state.accessTokens.filter((item) => item.accessToken !== accessToken),
+      accessTokens: state.accessTokens.map((item) =>
+        item.accessToken === accessToken ? { ...item, revokedAt: now.toISOString() } : item,
+      ),
     }));
   }
 }
@@ -569,13 +571,14 @@ export class MongoAccessTokenRepository implements AccessTokenRepository<StoredA
     const collection = await getMongoCollection<StoredAccessToken>(this.options, 'accessTokens');
     return collection.findOne({
       accessToken,
+      revokedAt: { $exists: false },
       expiresAt: { $gt: now.toISOString() },
     });
   }
 
-  async revoke(accessToken: string): Promise<void> {
+  async revoke(accessToken: string, now = new Date()): Promise<void> {
     const collection = await getMongoCollection<StoredAccessToken>(this.options, 'accessTokens');
-    await collection.deleteOne({ accessToken });
+    await collection.updateOne({ accessToken }, { $set: { revokedAt: now.toISOString() } });
   }
 }
 

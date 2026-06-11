@@ -4,6 +4,7 @@ import type { StoredAuditEvent, StoredAuthSession, StoredUserAccount } from '../
 import type { OidcAdapterRegistry, ProviderProfile } from './provider.js';
 import { BrokerStateService } from './state-service.js';
 import { BrokerAccountLinkingService } from './account-linking-service.js';
+import { normalizeBrokerRedirectUri } from './redirect-uri.js';
 
 export class BrokerAuthenticationService {
   constructor(
@@ -16,7 +17,8 @@ export class BrokerAuthenticationService {
 
   async start(provider: 'google' | 'entra', redirectUri: string, workspaceId?: string): Promise<{ redirectUrl: string }> {
     const adapter = this.getAdapter(provider);
-    const brokerState = await this.stateService.issue(provider, redirectUri, workspaceId);
+    const normalizedRedirectUri = normalizeBrokerRedirectUri(redirectUri);
+    const brokerState = await this.stateService.issue(provider, normalizedRedirectUri, workspaceId);
     const redirectUrl = await adapter.buildLoginUrl(brokerState.state, brokerState.nonce);
     return { redirectUrl };
   }

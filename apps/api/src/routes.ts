@@ -118,7 +118,7 @@ export async function buildApiContext(issuer: string, dataDir = '.pubauth-data')
       clientStore,
       refreshTokenStore,
     ),
-    userInfoService: new JwtUserInfoService(accessTokenStore, jwtSigner),
+    userInfoService: new JwtUserInfoService(accessTokenStore, jwtSigner, sessionRepository),
     authorizationService: new DefaultAuthorizationService(clientStore, authorizationCodeStore),
     sessionAuthenticator:
       environment === 'local'
@@ -422,6 +422,7 @@ async function handleAuthorize(
       codeChallengeMethod: requireCodeChallengeMethod(request),
       subjectId: principal.subjectId,
       workspaceId: principal.workspaceId,
+      sessionId: principal.sessionId,
     });
 
     const redirect = new URL(response.redirectUri);

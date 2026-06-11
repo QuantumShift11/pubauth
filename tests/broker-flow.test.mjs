@@ -53,7 +53,7 @@ test('google and entra broker callbacks validate state and link identities to on
 
     const googleStart = await brokerRoute.handler(
       request('GET', '/auth/broker/google/start', {
-        redirect_uri: 'http://localhost:3001/after-google',
+        redirect_uri: '/after-google',
         workspace_id: 'workspace-core-platform',
       }),
     );
@@ -71,12 +71,12 @@ test('google and entra broker callbacks validate state and link identities to on
       }),
     );
     assert.equal(googleCallback.statusCode, 302);
-    assert.equal(googleCallback.headers.location, 'http://localhost:3001/after-google');
+    assert.equal(googleCallback.headers.location, '/after-google');
     assert.equal(typeof googleCallback.headers['set-cookie'], 'string');
 
     const entraStart = await entraStartRoute.handler(
       request('GET', '/auth/broker/entra/start', {
-        redirect_uri: 'http://localhost:3001/after-entra',
+        redirect_uri: '/after-entra',
         workspace_id: 'workspace-core-platform',
       }),
     );
@@ -94,7 +94,7 @@ test('google and entra broker callbacks validate state and link identities to on
       }),
     );
     assert.equal(entraCallback.statusCode, 302);
-    assert.equal(entraCallback.headers.location, 'http://localhost:3001/after-entra');
+    assert.equal(entraCallback.headers.location, '/after-entra');
 
     const state = await context.stateStore.read();
     const brokerUsers = state.users.filter((user) => user.email === 'broker.user@example.com');
@@ -130,7 +130,7 @@ test('broker callback rejects nonce mismatch', async () => {
     const callbackRoute = findRoute(routes, 'GET', '/auth/broker/google/callback');
     const startResponse = await startRoute.handler(
       request('GET', '/auth/broker/google/start', {
-        redirect_uri: 'http://localhost:3001/after-google',
+        redirect_uri: '/after-google',
       }),
     );
 
@@ -146,6 +146,56 @@ test('broker callback rejects nonce mismatch', async () => {
     );
     assert.equal(callbackResponse.statusCode, 400);
     assert.equal(callbackResponse.body.error, 'provider_nonce_mismatch');
+  } finally {
+    await closeServer(provider.server);
+    restoreEnv(previousEnv);
+  }
+});
+
+test('broker start validates post-login redirect targets', async () => {
+  const previousEnv = {
+    PUBAUTH_ENV: process.env.PUBAUTH_ENV,
+    PUBAUTH_GOOGLE_OIDC_ISSUER: process.env.PUBAUTH_GOOGLE_OIDC_ISSUER,
+    PUBAUTH_GOOGLE_CLIENT_ID: process.env.PUBAUTH_GOOGLE_CLIENT_ID,
+    PUBAUTH_GOOGLE_CLIENT_SECRET: process.env.PUBAUTH_GOOGLE_CLIENT_SECRET,
+    PUBAUTH_GOOGLE_REDIRECT_URI: process.env.PUBAUTH_GOOGLE_REDIRECT_URI,
+  };
+
+  const provider = await startFakeProvider('google-subject', 'broker.user@example.com');
+
+  try {
+    process.env.PUBAUTH_ENV = 'local';
+    process.env.PUBAUTH_GOOGLE_OIDC_ISSUER = provider.issuer;
+    process.env.PUBAUTH_GOOGLE_CLIENT_ID = 'google-client';
+    process.env.PUBAUTH_GOOGLE_CLIENT_SECRET = 'google-secret';
+    process.env.PUBAUTH_GOOGLE_REDIRECT_URI = 'https://pubauth.example/auth/broker/google/callback';
+
+    const routes = await buildApiRoutes('https://pubauth.example', mkdtempSync(join(tmpdir(), 'pubauth-broker-')));
+    const startRoute = findRoute(routes, 'GET', '/auth/broker/google/start');
+    assert.ok(startRoute);
+
+    const allowed = await startRoute.handler(
+      request('GET', '/auth/broker/google/start', { redirect_uri: '/dashboard' }),
+    );
+    assert.equal(allowed.statusCode, 302);
+
+    const external = await startRoute.handler(
+      request('GET', '/auth/broker/google/start', { redirect_uri: 'https://evil.com' }),
+    );
+    assert.equal(external.statusCode, 400);
+    assert.equal(external.body.error, 'invalid_redirect_uri');
+
+    const protocolRelative = await startRoute.handler(
+      request('GET', '/auth/broker/google/start', { redirect_uri: '//evil.com' }),
+    );
+    assert.equal(protocolRelative.statusCode, 400);
+    assert.equal(protocolRelative.body.error, 'invalid_redirect_uri');
+
+    const encodedExternal = await startRoute.handler(
+      request('GET', '/auth/broker/google/start', { redirect_uri: '%2F%2Fevil.com' }),
+    );
+    assert.equal(encodedExternal.statusCode, 400);
+    assert.equal(encodedExternal.body.error, 'invalid_redirect_uri');
   } finally {
     await closeServer(provider.server);
     restoreEnv(previousEnv);

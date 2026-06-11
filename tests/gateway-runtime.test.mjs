@@ -10,6 +10,8 @@ import { findRoute } from '../dist/packages/http/src/index.js';
 import { buildGatewayRoutes } from '../dist/apps/gateway/src/routes.js';
 
 test('gateway runtime proxies trusted requests and denies unknown routes', async () => {
+  const previousSessionMode = process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+  process.env.PUBAUTH_GATEWAY_SESSION_MODE = 'enabled';
   const upstream = await startUpstreamServer();
   const issuer = 'https://issuer.example';
   const dataDir = mkdtempSync(join(tmpdir(), 'pubauth-gateway-'));
@@ -110,10 +112,25 @@ test('gateway runtime proxies trusted requests and denies unknown routes', async
         token_use: 'access_token',
         client_id: 'client-1',
         workspace_id: 'workspace-1',
+        jti: 'access-token-1',
         roles: ['viewer'],
         groups: ['platform'],
       },
     });
+    await stateStore.update((state) => ({
+      ...state,
+      accessTokens: [
+        {
+          accessToken: bearerToken,
+          jti: 'access-token-1',
+          subjectId: 'user-1',
+          clientId: 'client-1',
+          workspaceId: 'workspace-1',
+          scopes: ['openid'],
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      ],
+    }));
 
     const bearerResponse = await proxyRoute.handler({
       method: 'GET',
@@ -141,7 +158,7 @@ test('gateway runtime proxies trusted requests and denies unknown routes', async
       path: '/reports/summary',
       query: {},
       headers: {
-        'x-pubauth-session-id': 'session-1',
+        cookie: 'pubauth_session=session-1',
         'x-pubauth-user-id': 'spoofed',
       },
     });
@@ -150,6 +167,19 @@ test('gateway runtime proxies trusted requests and denies unknown routes', async
     const sessionPayload = JSON.parse(String(sessionResponse.body));
     assert.equal(sessionPayload.headers['x-pubauth-user-id'], 'user-2');
     assert.equal(sessionPayload.headers['x-pubauth-user-id'] === 'spoofed', false);
+
+    const spoofedSessionHeader = await proxyRoute.handler({
+      method: 'GET',
+      path: '/reports/summary',
+      query: {},
+      headers: {
+        'x-pubauth-session-id': 'session-1',
+        'x-pubauth-user-id': 'spoofed',
+        'x-pubauth-roles': 'admin',
+      },
+    });
+    assert.equal(spoofedSessionHeader.statusCode, 403);
+    assert.equal(spoofedSessionHeader.body.error, 'missing_credential');
 
     const deniedRoute = findRoute(routes, 'GET', '/unknown');
     assert.ok(deniedRoute);
@@ -165,6 +195,11 @@ test('gateway runtime proxies trusted requests and denies unknown routes', async
     assert.equal(deniedResponse.statusCode, 403);
     assert.equal(deniedResponse.body.error, 'deny_by_default');
   } finally {
+    if (previousSessionMode === undefined) {
+      delete process.env.PUBAUTH_GATEWAY_SESSION_MODE;
+    } else {
+      process.env.PUBAUTH_GATEWAY_SESSION_MODE = previousSessionMode;
+    }
     await closeServer(upstream.server);
   }
 });

@@ -13,7 +13,7 @@ export class MemoryAccessTokenStore implements AccessTokenStore {
       return null;
     }
 
-    if (new Date(token.expiresAt).getTime() <= now.getTime()) {
+    if (token.revokedAt || new Date(token.expiresAt).getTime() <= now.getTime()) {
       return null;
     }
 

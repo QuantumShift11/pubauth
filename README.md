@@ -123,3 +123,5 @@ PUBAUTH_ENTRA_REDIRECT_URI=...
 ## Current status
 
 This repo includes a React control-plane UI, signed RS256 OIDC issuance, JWKS exposure, session-backed admin APIs, tenant-scoped admin authorization, and broker flows for Google and Entra wired through provider discovery, token exchange, JWKS-backed ID token verification, state, nonce, and account linking. Mongo and Redis adapters have runnable integration tests when the Docker-backed services above are available.
+
+Access tokens are intentionally short-lived. PubAuth persists access-token metadata, including `jti` and optional `sid`, and gateway and UserInfo checks reject revoked or expired token metadata when present. Session revocation is enforced for session-bound tokens, but products should still treat access-token revocation as best-effort and keep access-token TTLs short.

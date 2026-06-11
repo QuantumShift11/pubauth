@@ -62,6 +62,7 @@ export class DevTokenIssuer implements TokenIssuer {
       client,
       subjectId: code.subjectId,
       workspaceId: code.workspaceId,
+      sessionId: code.sessionId,
       scopes: code.scopes,
     });
   }
@@ -94,6 +95,7 @@ export class DevTokenIssuer implements TokenIssuer {
       subjectId: token.subjectId,
       clientId: token.clientId,
       workspaceId: token.workspaceId,
+      sessionId: token.sessionId,
       scopes: [...token.scopes],
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       parentRefreshTokenHash: token.refreshTokenHash,
@@ -111,6 +113,7 @@ export class DevTokenIssuer implements TokenIssuer {
       client,
       subjectId: token.subjectId,
       workspaceId: token.workspaceId,
+      sessionId: token.sessionId,
       scopes: token.scopes,
     });
 
@@ -120,12 +123,15 @@ export class DevTokenIssuer implements TokenIssuer {
     };
   }
 
-  private async issueTokens(request: { client: OidcClient; subjectId: string; workspaceId: string; scopes: string[] }): Promise<TokenResponse> {
+  private async issueTokens(request: { client: OidcClient; subjectId: string; workspaceId: string; sessionId?: string; scopes: string[] }): Promise<TokenResponse> {
     const expiresIn = 3600;
+    const accessTokenId = `at-${randomToken(12)}`;
     const claims = {
       scope: request.scopes.join(' '),
       client_id: request.client.clientId,
       workspace_id: request.workspaceId,
+      jti: accessTokenId,
+      ...(request.sessionId ? { sid: request.sessionId } : {}),
       ...((await this.claimResolver?.({ subjectId: request.subjectId, workspaceId: request.workspaceId })) ?? {}),
     };
 
@@ -155,9 +161,11 @@ export class DevTokenIssuer implements TokenIssuer {
 
     await this.accessTokens?.save({
       accessToken,
+      jti: accessTokenId,
       subjectId: request.subjectId,
       clientId: request.client.clientId,
       workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
       scopes: request.scopes,
       expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
     });
@@ -180,6 +188,7 @@ export class DevTokenIssuer implements TokenIssuer {
         subjectId: request.subjectId,
         clientId: request.client.clientId,
         workspaceId: request.workspaceId,
+        sessionId: request.sessionId,
         scopes: [...request.scopes],
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });

@@ -19,6 +19,11 @@ export interface GatewayCredentialVerifier {
   verifySession(sessionId: string): Promise<GatewayPrincipal | null>;
 }
 
+export interface GatewayCredentialOptions {
+  sessionModeEnabled?: boolean;
+  sessionCookieName?: string;
+}
+
 export interface TrustedProxyRequest {
   upstreamUrl: string;
   method: string;
@@ -46,13 +51,14 @@ export async function authorizeGatewayRequest(
   rules: GatewayRouteRule[],
   policyRules: PolicyRule[],
   verifier: GatewayCredentialVerifier,
+  options: GatewayCredentialOptions = {},
 ): Promise<GatewayProxyDecision> {
   const route = resolveGatewayRoute(request.path, request.method, rules);
   if (!route.matched || !route.upstreamUrl || !route.appId) {
     return { allowed: false, reason: 'deny_by_default' };
   }
 
-  const credential = readGatewayCredential(request.headers);
+  const credential = readGatewayCredential(request.headers, options);
   if (!credential) {
     return { allowed: false, reason: 'missing_credential' };
   }
@@ -135,14 +141,20 @@ export function buildTrustedProxyRequest(
 
 function readGatewayCredential(
   headers: Record<string, string | string[] | undefined>,
+  options: GatewayCredentialOptions,
 ): { kind: 'bearer' | 'session'; token: string } | null {
   const authorization = headers.authorization ?? headers.Authorization;
   if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
     return { kind: 'bearer', token: authorization.slice('Bearer '.length) };
   }
 
-  const sessionId = headers['x-pubauth-session-id'];
-  if (typeof sessionId === 'string' && sessionId.length > 0) {
+  if (!options.sessionModeEnabled) {
+    return null;
+  }
+
+  const cookieHeader = readHeader(headers, 'cookie') ?? '';
+  const sessionId = readCookieValue(cookieHeader, options.sessionCookieName ?? 'pubauth_session');
+  if (sessionId) {
     return { kind: 'session', token: sessionId };
   }
 
@@ -187,4 +199,16 @@ function toFetchHeaders(headers: Record<string, string | string[] | undefined>):
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readCookieValue(cookieHeader: string, name: string): string | null {
+  for (const part of cookieHeader.split(';')) {
+    const [cookieName, ...valueParts] = part.trim().split('=');
+    if (cookieName === name) {
+      const value = valueParts.join('=').trim();
+      return value.length > 0 ? value : null;
+    }
+  }
+
+  return null;
 }
